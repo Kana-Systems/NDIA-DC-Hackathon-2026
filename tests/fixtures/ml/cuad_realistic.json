@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "data": [
+    {
+      "title": "LIMEENERGYCO_09_09_1999-EX-10-DISTRIBUTOR-AGREEMENT",
+      "paragraphs": [
+        {
+          "context": "Distributor may terminate this Agreement on thirty days notice. New intellectual property is assigned to Supplier. Liability for breach of confidentiality is uncapped.",
+          "qas": [
+            {
+              "id": "LIMEENERGYCO_09_09_1999-EX-10-DISTRIBUTOR-AGREEMENT__Termination For Convenience_0",
+              "question": "Highlight the parts (if any) of this contract related to \"Termination For Convenience\" that should be reviewed by a lawyer.",
+              "answers": [
+                {
+                  "text": "may terminate this Agreement on thirty days notice",
+                  "answer_start": 12
+                }
+              ]
+            },
+            {
+              "id": "LIMEENERGYCO_09_09_1999-EX-10-DISTRIBUTOR-AGREEMENT__IP Ownership Assignment_1",
+              "question": "Highlight the parts (if any) of this contract related to \"IP Ownership Assignment\" that should be reviewed by a lawyer.",
+              "answers": [
+                {
+                  "text": "intellectual property is assigned to Supplier",
+                  "answer_start": 68
+                }
+              ]
+            },
+            {
+              "id": "LIMEENERGYCO_09_09_1999-EX-10-DISTRIBUTOR-AGREEMENT__Uncapped Liability_2",
+              "question": "Highlight the parts (if any) of this contract related to \"Uncapped Liability\" that should be reviewed by a lawyer.",
+              "answers": [
+                {
+                  "text": "Liability for breach of confidentiality is uncapped",
+                  "answer_start": 115
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+schema_version: "1.0"
+playbook:
+  name: Government Contract Review Demo
+  disclaimer: Decision support only; a warranted contracting professional must make final determinations.
+  workflow:
+    - id: identify-context
+      action: Identify agency, instrument, acquisition stage, dollar value, and data sensitivity.
+    - id: find-requirements
+      action: Retrieve potentially applicable FAR/DFARS requirements and preserve citation IDs.
+    - id: check-clauses
+      action: Compare expected provisions and clauses with contract text.
+    - id: validate-references
+      action: Flag malformed or ambiguous clause references for human review.
+    - id: report
+      action: Report evidence, source citations, confidence, and unresolved assumptions.
+  severities:
+    high: Potential security, statutory, or material compliance gap.
+    medium: Clause, process, or reference discrepancy requiring review.
+    low: Drafting quality or advisory issue.

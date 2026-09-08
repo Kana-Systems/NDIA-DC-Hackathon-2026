@@ -1,0 +1,7 @@
+SYNTHETIC TEST CONTRACT — NOT AN OFFICIAL PROCUREMENT DOCUMENT
+
+This solicitation requires the offeror to maintain an active System for Award
+Management registration and incorporates FAR 52.204-7.
+
+The contractor will process covered defense information and must implement NIST
+SP 800-171 controls. No cybersecurity clause is listed in this fixture.

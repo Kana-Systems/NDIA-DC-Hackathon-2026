@@ -1,0 +1,461 @@
+name: Test and deploy GovCloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: govcloud-demo
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_GOV_REGION }}
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VAR_aws_region: ${{ vars.AWS_GOV_REGION }}
+  TF_VAR_environment: demo
+  TF_VAR_security_domain: ${{ vars.SECURITY_DOMAIN || 'demo' }}
+  TF_VAR_create_graph_connector_secret: ${{ vars.CREATE_GRAPH_CONNECTOR_SECRET || 'false' }}
+  TF_VAR_hosted_zone_id: ${{ vars.HOSTED_ZONE_ID }}
+  TF_VAR_domain_name: ${{ vars.APP_DOMAIN }}
+  TF_VAR_budget_alert_email: ${{ vars.BUDGET_ALERT_EMAIL }}
+  TF_VAR_allowed_ingress_cidrs: ${{ vars.ALLOWED_INGRESS_CIDRS_JSON }}
+
+jobs:
+  test:
+    name: Test, lint, and validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            pyproject.toml
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --requirement requirements-dev.txt
+          python -m pip check
+
+      - name: Lint Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=()
+          for path in app evaluation ingestion knowledge ml tests; do
+            [[ -d "$path" ]] && paths+=("$path")
+          done
+          if (( ${#paths[@]} )); then ruff check "${paths[@]}"; fi
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d tests ]]; then pytest -q; fi
+
+      - name: Run deterministic intelligence evaluation
+        shell: bash
+        run: python -m evaluation.intelligence_benchmark
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.10.5"
+          terraform_wrapper: false
+
+      - name: Validate Terraform
+        working-directory: infra/terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate deployment inputs
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          ROLE_ARN: ${{ vars.AWS_GOV_ROLE_ARN }}
+          STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          STATE_KEY: ${{ vars.TF_STATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$AWS_REGION" =~ ^us-gov- ]]
+          [[ "$ROLE_ARN" =~ ^arn:aws-us-gov:iam::[0-9]{12}:role/ ]]
+          [[ "$STATE_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]
+          [[ "$STATE_KEY" =~ ^[A-Za-z0-9._/-]+$ ]]
+          [[ "$STATE_KEY" =~ /demo\.tfstate$ ]]
+          [[ "$TF_VAR_environment" == "demo" ]]
+          [[ "$TF_VAR_security_domain" =~ ^[a-z][a-z0-9-]{1,15}$ ]]
+          [[ "$TF_VAR_create_graph_connector_secret" =~ ^(true|false)$ ]]
+          [[ "$TF_VAR_hosted_zone_id" =~ ^Z[A-Z0-9]+$ ]]
+          [[ "$TF_VAR_domain_name" =~ ^[a-z0-9.-]+\.[a-z]{2,}$ ]]
+          [[ "$TF_VAR_budget_alert_email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
+          jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' \
+            <<<"$TF_VAR_allowed_ingress_cidrs" >/dev/null
+
+      - name: Report deployment disposition
+        shell: bash
+        env:
+          RUN_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$RUN_REF" == "refs/heads/main" ]]; then
+            echo "::notice::Validation passed; the environment-gated deployment is eligible to run."
+          else
+            echo "::notice::Validation passed for $RUN_REF; deployment is skipped because only main may deploy."
+          fi
+
+  deploy:
+    name: Build, deploy, and smoke test
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: govcloud-demo
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Configure GovCloud credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          aws-region: ${{ vars.AWS_GOV_REGION }}
+          role-to-assume: ${{ vars.AWS_GOV_ROLE_ARN }}
+          role-session-name: github-deploy-${{ github.run_id }}
+          audience: sts.amazonaws.com
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.10.5"
+          terraform_wrapper: false
+
+      - name: Initialize Terraform and ensure ECR
+        working-directory: infra/terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="use_lockfile=true"
+          terraform apply -auto-approve -target=aws_ecr_repository.app
+          repository_url="$(terraform output -raw ecr_repository_url)"
+          [[ "$repository_url" =~ ^[0-9]{12}\.dkr\.ecr\.us-gov-[a-z]+-[0-9]\.amazonaws\.com/ ]]
+          echo "REPOSITORY_URL=$repository_url" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Sign in to ECR
+        shell: bash
+        run: |
+          set -euo pipefail
+          registry="${REPOSITORY_URL%%/*}"
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$registry"
+
+      - name: Build and push immutable image
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}-[0-9]+-[0-9]+$ ]]
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=true \
+            --sbom=true \
+            --file Dockerfile \
+            --tag "${REPOSITORY_URL}:${IMAGE_TAG}" \
+            --push .
+
+      - name: Resolve immutable image digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository_name="${REPOSITORY_URL##*/}"
+          digest="$(aws ecr describe-images \
+            --region "$AWS_REGION" \
+            --repository-name "$repository_name" \
+            --image-ids "imageTag=${IMAGE_TAG}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "TF_VAR_image_uri=${REPOSITORY_URL}@${digest}" >> "$GITHUB_ENV"
+
+      - name: Terraform plan
+        working-directory: infra/terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform plan -out=tfplan
+
+      - name: Terraform apply
+        working-directory: infra/terraform
+        shell: bash
+        run: terraform apply -auto-approve tfplan
+
+      - name: Seed sample knowledge in OpenSearch
+        working-directory: infra/terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cluster="$(terraform output -raw ecs_cluster_name)"
+          task_definition="$(terraform output -raw knowledge_index_task_definition_arn)"
+          private_subnets="$(terraform output -json private_subnet_ids)"
+          security_group="$(terraform output -raw app_security_group_id)"
+
+          [[ "$task_definition" =~ ^arn:aws-us-gov:ecs: ]]
+          [[ "$security_group" =~ ^sg-[0-9a-f]+$ ]]
+          jq -e \
+            'type == "array" and length > 0 and all(.[]; test("^subnet-[0-9a-f]+$"))' \
+            <<<"$private_subnets" >/dev/null
+
+          network_configuration="$(
+            jq -cn \
+              --argjson subnets "$private_subnets" \
+              --arg security_group "$security_group" \
+              '{
+                awsvpcConfiguration: {
+                  subnets: $subnets,
+                  securityGroups: [$security_group],
+                  assignPublicIp: "DISABLED"
+                }
+              }'
+          )"
+          overrides="$(
+            jq -cn \
+              '{
+                containerOverrides: [{
+                  name: "knowledge-index",
+                  command: [
+                    "/bin/sh",
+                    "-c",
+                    "exec python -m knowledge.index_opensearch knowledge/samples/official_sources.jsonl --endpoint \"$OPENSEARCH_ENDPOINT\" --index \"$OPENSEARCH_INDEX\" --embed"
+                  ]
+                }]
+              }'
+          )"
+
+          run_result="$(
+            aws ecs run-task \
+              --region "$AWS_REGION" \
+              --cluster "$cluster" \
+              --launch-type FARGATE \
+              --platform-version LATEST \
+              --task-definition "$task_definition" \
+              --network-configuration "$network_configuration" \
+              --overrides "$overrides" \
+              --started-by "seed-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              --output json
+          )"
+
+          if jq -e '(.failures // []) | length > 0' <<<"$run_result" >/dev/null; then
+            jq -r '.failures[] | "ECS run-task failure: \(.arn // "unknown"): \(.reason // "unknown")"' \
+              <<<"$run_result" >&2
+            exit 1
+          fi
+
+          task_arn="$(jq -er '.tasks | select(length == 1) | .[0].taskArn' <<<"$run_result")"
+          aws ecs wait tasks-stopped \
+            --region "$AWS_REGION" \
+            --cluster "$cluster" \
+            --tasks "$task_arn"
+
+          task_result="$(
+            aws ecs describe-tasks \
+              --region "$AWS_REGION" \
+              --cluster "$cluster" \
+              --tasks "$task_arn" \
+              --output json
+          )"
+          jq -r '
+            .tasks[0] as $task
+            | ($task.containers[]? | select(.name == "knowledge-index")) as $container
+            | "knowledge seed stopCode=\($task.stopCode // "unknown")"
+              + " exitCode=\($container.exitCode // "missing")"
+              + " stoppedReason=\($task.stoppedReason // "unknown")"
+              + " containerReason=\($container.reason // "none")"
+          ' <<<"$task_result"
+
+          if ! jq -e '
+            ((.failures // []) | length == 0)
+            and (.tasks | length == 1)
+            and any(
+              .tasks[0].containers[]?;
+              .name == "knowledge-index" and .exitCode == 0
+            )
+          ' <<<"$task_result" >/dev/null; then
+            echo "Knowledge indexing task failed." >&2
+            exit 1
+          fi
+
+      - name: Ingest deterministic J2 fixture corpus
+        working-directory: infra/terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cluster="$(terraform output -raw ecs_cluster_name)"
+          task_definition="$(terraform output -raw fixture_ingestion_task_definition_arn)"
+          private_subnets="$(terraform output -json private_subnet_ids)"
+          security_group="$(terraform output -raw app_security_group_id)"
+
+          [[ "$task_definition" =~ ^arn:aws-us-gov:ecs: ]]
+          [[ "$task_definition" == *:* ]]
+          [[ "$security_group" =~ ^sg-[0-9a-f]+$ ]]
+          jq -e \
+            'type == "array" and length > 0 and all(.[]; test("^subnet-[0-9a-f]+$"))' \
+            <<<"$private_subnets" >/dev/null
+
+          network_configuration="$(
+            jq -cn \
+              --argjson subnets "$private_subnets" \
+              --arg security_group "$security_group" \
+              '{
+                awsvpcConfiguration: {
+                  subnets: $subnets,
+                  securityGroups: [$security_group],
+                  assignPublicIp: "DISABLED"
+                }
+              }'
+          )"
+          overrides="$(
+            jq -cn \
+              '{
+                containerOverrides: [{
+                  name: "fixture-ingestion",
+                  command: ["python", "-m", "ingestion.cli", "--count", "120", "--durable"]
+                }]
+              }'
+          )"
+
+          run_result="$(
+            aws ecs run-task \
+              --region "$AWS_REGION" \
+              --cluster "$cluster" \
+              --launch-type FARGATE \
+              --platform-version LATEST \
+              --task-definition "$task_definition" \
+              --network-configuration "$network_configuration" \
+              --overrides "$overrides" \
+              --started-by "fixture-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              --output json
+          )"
+
+          if jq -e '(.failures // []) | length > 0' <<<"$run_result" >/dev/null; then
+            jq -r '.failures[] | "ECS run-task failure: \(.arn // "unknown"): \(.reason // "unknown")"' \
+              <<<"$run_result" >&2
+            exit 1
+          fi
+
+          task_arn="$(jq -er '.tasks | select(length == 1) | .[0].taskArn' <<<"$run_result")"
+          aws ecs wait tasks-stopped \
+            --region "$AWS_REGION" \
+            --cluster "$cluster" \
+            --tasks "$task_arn"
+
+          task_result="$(
+            aws ecs describe-tasks \
+              --region "$AWS_REGION" \
+              --cluster "$cluster" \
+              --tasks "$task_arn" \
+              --output json
+          )"
+          jq -r '
+            .tasks[0] as $task
+            | ($task.containers[]? | select(.name == "fixture-ingestion")) as $container
+            | "fixture ingestion stopCode=\($task.stopCode // "unknown")"
+              + " exitCode=\($container.exitCode // "missing")"
+              + " stoppedReason=\($task.stoppedReason // "unknown")"
+              + " containerReason=\($container.reason // "none")"
+          ' <<<"$task_result"
+
+          if ! jq -e '
+            ((.failures // []) | length == 0)
+            and (.tasks | length == 1)
+            and any(
+              .tasks[0].containers[]?;
+              .name == "fixture-ingestion" and .exitCode == 0
+            )
+          ' <<<"$task_result" >/dev/null; then
+            echo "Fixture ingestion task failed." >&2
+            exit 1
+          fi
+
+          task_id="${task_arn##*/}"
+          log_group="/ecs/${cluster}"
+          log_stream="fixture-ingestion/fixture-ingestion/${task_id}"
+          summary=""
+          for _ in {1..10}; do
+            messages="$(
+              aws logs get-log-events \
+                --region "$AWS_REGION" \
+                --log-group-name "$log_group" \
+                --log-stream-name "$log_stream" \
+                --query 'events[].message' \
+                --output json
+            )"
+            summary="$(
+              jq -cer \
+                '[.[] | fromjson? | select(.durable? == true and (.documents_generated? // 0) >= 120 and (.documents_ingested? // 0) >= 120)] | last // empty' \
+                <<<"$messages"
+            )" || true
+            [[ -n "$summary" ]] && break
+            sleep 3
+          done
+
+          if [[ -z "$summary" ]]; then
+            echo "Fixture task succeeded but did not emit a >=120-document summary." >&2
+            exit 1
+          fi
+          jq -r '"Verified durable fixture ingestion: generated=\(.documents_generated) ingested=\(.documents_ingested) records=\(.records_stored)"' \
+            <<<"$summary"
+
+      - name: Force service deployment
+        working-directory: infra/terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          cluster="$(terraform output -raw ecs_cluster_name)"
+          service="$(terraform output -raw ecs_service_name)"
+          aws ecs update-service \
+            --cluster "$cluster" \
+            --service "$service" \
+            --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster "$cluster" --services "$service"
+
+      - name: Smoke test
+        shell: bash
+        env:
+          HEALTH_URL: https://${{ vars.APP_DOMAIN }}/health
+        run: |
+          set -euo pipefail
+          for _ in {1..20}; do
+            if curl --fail --silent --show-error \
+              --connect-timeout 5 --max-time 15 "$HEALTH_URL" >/dev/null; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Health endpoint did not become ready: $HEALTH_URL" >&2
+          exit 1

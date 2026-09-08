@@ -1,0 +1,7 @@
+PUBLIC SYNTHETIC ENTERPRISE BRIEF 086
+
+Document identifier: SYN-086
+Portfolio: J2 intelligence readiness cohort 02
+Region: synthetic-sector-06
+
+This generated record contains fictional, unclassified data for deterministic ingestion and access-control testing. It is not operational intelligence.

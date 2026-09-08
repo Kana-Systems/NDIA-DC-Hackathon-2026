@@ -1,0 +1,39 @@
+schema_version: "1.0"
+generated_for: Government Contract Review Demo
+sources:
+  - id: acquisition-gov-far
+    title: Federal Acquisition Regulation
+    publisher: U.S. General Services Administration
+    canonical_url: https://www.acquisition.gov/browse/index/far
+    format: DITA/XML
+    authority: official
+    redistribution_note: U.S. Government work; verify current text at the canonical source.
+  - id: acquisition-gov-dfars
+    title: Defense Federal Acquisition Regulation Supplement
+    publisher: U.S. Department of Defense
+    canonical_url: https://www.acquisition.gov/dfars
+    format: DITA/XML
+    authority: official
+    retrieved_at: "2026-09-04"
+    included_locators:
+      - locator: 204.7304(c)
+        effective_date: "2026-05-07"
+        source_change_number: DFARS Change 5/7/2026
+        canonical_url: https://www.acquisition.gov/dfars/204.7304-solicitation-provision-and-contract-clauses.
+        citation_id: dfars:dfars:204-7304-c:5343579076a3
+        content_sha256: c6b9d6e7427bea9cd27133734fab8325e1648d189a04bacefc718f04803af7c5
+    redistribution_note: U.S. Government work; verify current text at the canonical source.
+  - id: dau-smart-matrix
+    title: Provision and Clause Matrix
+    publisher: Defense Acquisition University
+    canonical_url: https://www.acquisition.gov/far-smart-matrix
+    format: XLSX/CSV
+    authority: official-reference
+    redistribution_note: Preserve publisher attribution and retrieval date.
+  - id: cuad-v1
+    title: Contract Understanding Atticus Dataset
+    publisher: The Atticus Project
+    canonical_url: https://www.atticusprojectai.org/cuad
+    format: JSON/ZIP
+    license: CC-BY-4.0
+    attribution_file: ml/CUAD_ATTRIBUTION.md

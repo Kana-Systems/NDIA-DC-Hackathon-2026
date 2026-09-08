@@ -1,0 +1,16 @@
+schema_version: "1.0"
+base_job_name: government-contract-classifier
+instance_type: ml.g5.xlarge
+instance_count: 1
+transformers_version: "4.36"
+pytorch_version: "2.1"
+py_version: py310
+output_path: null
+hyperparameters:
+  model-name: nlpaueb/legal-bert-base-uncased
+  problem-type: multi_label
+  epochs: 3
+  batch-size: 8
+  learning-rate: 0.00002
+  max-length: 512
+  seed: 17

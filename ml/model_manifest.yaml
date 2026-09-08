@@ -1,0 +1,42 @@
+schema_version: "1.0"
+models:
+  - id: local-heuristic-v1
+    type: deterministic_regex_baseline
+    implementation: ml/heuristic.py
+    labels: [cybersecurity, sam_registration, termination, data_rights]
+    offline: true
+    intended_use: Demo fallback, smoke tests, and benchmark baseline.
+    limitations:
+      - Keyword matches do not establish legal applicability.
+      - Negation and cross-reference context are not reliably interpreted.
+  - id: legal-encoder-prototype
+    type: huggingface_sequence_classification
+    base_model: nlpaueb/legal-bert-base-uncased
+    training_entrypoint: ml/train.py
+    inference_entrypoint: ml/inference.py
+    source_dataset: CUAD v1
+    source_license: CC-BY-4.0
+    category_mapping: ml/cuad_category_domain_mapping.json
+    windowing:
+      strategy: answer_centered_positive_sliding_negative
+      window_chars: 1800
+      stride_chars: 900
+      negative_windows_per_positive: 1
+      inference_aggregation: maximum_label_score_per_original_input
+    artifact_status: not_vendored
+    offline: false
+    packaged_artifacts:
+      - config.json
+      - label_mapping.json
+      - training_provenance.json
+      - evaluation_metrics.json
+      - cuad_category_domain_mapping.json
+      - CUAD_ATTRIBUTION.md
+      - window_config.json
+      - code/inference.py
+      - code/heuristic.py
+      - code/windowing.py
+    intended_use: Fine-tuned multi-label clause-category prototype after CUAD preprocessing.
+    limitations:
+      - CUAD labels describe commercial-contract concepts and cannot establish FAR/DFARS applicability.
+      - Outputs require human review and must not be treated as legal advice.

@@ -1,0 +1,7 @@
+PUBLIC SYNTHETIC ENTERPRISE BRIEF 015
+
+Document identifier: SYN-015
+Portfolio: J2 intelligence readiness cohort 03
+Region: synthetic-sector-07
+
+This generated record contains fictional, unclassified data for deterministic ingestion and access-control testing. It is not operational intelligence.

@@ -1,0 +1,7 @@
+PUBLIC SYNTHETIC ENTERPRISE BRIEF 074
+
+Document identifier: SYN-074
+Portfolio: J2 intelligence readiness cohort 02
+Region: synthetic-sector-02
+
+This generated record contains fictional, unclassified data for deterministic ingestion and access-control testing. It is not operational intelligence.

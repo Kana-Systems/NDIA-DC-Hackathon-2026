@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "cases": [
+    {
+      "id": "synthetic-compliant",
+      "fixture": "tests/fixtures/contracts/compliant.txt",
+      "metadata": {
+        "agency_department": "DoD",
+        "instrument_type": "solicitation",
+        "acquisition_solely_cots": false
+      },
+      "expected_finding_ids": []
+    },
+    {
+      "id": "synthetic-dod-missing-clause",
+      "fixture": "tests/fixtures/contracts/missing_clause.txt",
+      "metadata": {
+        "agency_department": "Department of Defense",
+        "instrument_type": "contract",
+        "acquisition_solely_cots": false
+      },
+      "expected_finding_ids": [
+        "missing-required-clause:252.204-7012"
+      ]
+    },
+    {
+      "id": "synthetic-dod-solely-cots",
+      "fixture": "tests/fixtures/contracts/missing_clause.txt",
+      "metadata": {
+        "agency_department": "DoD",
+        "instrument_type": "contract",
+        "acquisition_solely_cots": true
+      },
+      "expected_finding_ids": []
+    },
+    {
+      "id": "synthetic-civilian-contract",
+      "fixture": "tests/fixtures/contracts/missing_clause.txt",
+      "metadata": {
+        "agency_department": "Department of Homeland Security",
+        "instrument_type": "contract",
+        "acquisition_solely_cots": false
+      },
+      "expected_finding_ids": []
+    },
+    {
+      "id": "synthetic-malformed-reference",
+      "fixture": "tests/fixtures/contracts/malformed_reference.txt",
+      "metadata": {
+        "agency_department": "Department of Homeland Security",
+        "instrument_type": "contract",
+        "acquisition_solely_cots": false
+      },
+      "expected_finding_ids": [
+        "malformed-clause-reference:DFARS 252-204-7012"
+      ]
+    }
+  ]
+}
