@@ -118,11 +118,6 @@ output "j2_change_table_name" {
   value       = aws_dynamodb_table.j2_changes.name
 }
 
-output "j2_workflow_table_name" {
-  description = "Name of the J2 workflow table."
-  value       = aws_dynamodb_table.j2_workflows.name
-}
-
 output "graph_connector_secret_arn" {
   description = "ARN of the optional externally populated Microsoft Graph connector secret, or null."
   value       = try(aws_secretsmanager_secret.graph_connector[0].arn, null)

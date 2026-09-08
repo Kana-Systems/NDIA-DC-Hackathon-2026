@@ -4,10 +4,13 @@ from pydantic import SecretStr
 from app.adapters import OpenSearchRetrievalAdapter
 from app.config import Settings
 from app.grounding import authorized_evidence, enforce_statement_grounding
-from app.intelligence import CitedGenerationService, IntelligenceRepository
+from app.intelligence import (
+    CitedGenerationService,
+    DynamoDBIntelligenceRepository,
+    IntelligenceRepository,
+)
 from app.main import create_app
 from app.models import (
-    AnalystDecisionRequest,
     CitedStatement,
     EntityCandidate,
     Evidence,
@@ -16,8 +19,6 @@ from app.models import (
     IntelligenceQuery,
     PrincipalContext,
     ProvenanceLink,
-    ReviewDecision,
-    TargetObjectDraftRequest,
 )
 
 
@@ -29,8 +30,7 @@ def _principal(*groups: str) -> PrincipalContext:
         scopes=[
             "rag:query",
             "entities:read",
-            "objects:draft",
-            "objects:review",
+            "entities:review",
         ],
     )
 
@@ -111,7 +111,7 @@ def test_cited_generation_returns_only_authorized_sources() -> None:
     assert all(item.grounding_status == GroundingStatus.VERIFIED for item in response.statements)
 
 
-def test_entity_resolution_detects_changes_and_requires_reviewed_export() -> None:
+def test_entity_resolution_detects_changes_and_grounded_relationships() -> None:
     repository = IntelligenceRepository()
     provenance = [
         ProvenanceLink(
@@ -163,77 +163,40 @@ def test_entity_resolution_detects_changes_and_requires_reviewed_export() -> Non
     assert second.entity_id == first.entity_id
     assert repository.list_changes()[0].changed_fields == ["status"]
 
-    target = repository.create_target_object(
-        TargetObjectDraftRequest(
-            object_type="target-system-object",
-            entity_id=first.entity_id,
-            requested_fields=["status", "country"],
-        ),
-        _principal("mission-analysts"),
-    )
-    try:
-        repository.export(target.object_id)
-    except PermissionError:
-        pass
-    else:
-        raise AssertionError("Draft object was exported without analyst approval")
 
-    approved = repository.decide(
-        target.object_id,
-        AnalystDecisionRequest(
-            decision=ReviewDecision.APPROVED,
-            note="Validated against the cited fixture.",
-        ),
-        _principal("mission-analysts"),
-    )
-    assert approved.analyst == "analyst"
-    exported = repository.export(target.object_id)
-    assert exported["object"]["status"] == "approved"
-    assert exported["external_write_performed"] is False
+def test_dynamodb_hydration_ignores_ingestion_changes_without_workflow_payload() -> None:
+    class Table:
+        def __init__(self, items):
+            self.items = items
 
+        def scan(self, **_kwargs):
+            return {"Items": self.items}
 
-def test_invented_entity_citation_cannot_authorize_target_field() -> None:
-    repository = IntelligenceRepository()
-    entity = repository.resolve(
-        [
-            EntityCandidate(
-                name="Unsupported Candidate",
-                entity_type="organization",
-                attributes={"status": "active"},
-                provenance=[
-                    ProvenanceLink(
-                        citation_id="invented:citation",
-                        document_id="unknown",
-                    )
-                ],
-            )
-        ]
-    )[0]
-    target = repository.create_target_object(
-        TargetObjectDraftRequest(
-            object_type="target-system-object",
-            entity_id=entity.entity_id,
-            requested_fields=["status"],
-        ),
-        _principal("mission-analysts"),
+    class Resource:
+        def __init__(self):
+            self.tables = {
+                "entities": Table([]),
+                "changes": Table([{"change_id": "ingestion-change"}]),
+            }
+
+        def Table(self, name):
+            return self.tables[name]
+
+    repository = DynamoDBIntelligenceRepository(
+        entity_table="entities",
+        change_table="changes",
+        region="us-gov-west-1",
+        resource=Resource(),
     )
-    assert target.fields[0].grounding_status == GroundingStatus.UNVERIFIED
-    try:
-        repository.decide(
-            target.object_id,
-            AnalystDecisionRequest(decision=ReviewDecision.APPROVED),
-            _principal("mission-analysts"),
-        )
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("An invented citation authorized a target field")
+
+    assert repository.list_entities() == []
+    assert repository.list_changes() == []
 
 
 def test_demo_token_and_intelligence_api() -> None:
     settings = Settings(
-        gradio_username="reviewer",
-        gradio_password=SecretStr("test-password"),
+        workspace_username="reviewer",
+        workspace_password=SecretStr("test-password"),
         demo_jwt_secret=SecretStr("unit-test-signing-secret-32-characters"),
         bedrock_enabled=False,
     )

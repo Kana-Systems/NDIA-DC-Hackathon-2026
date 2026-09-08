@@ -59,7 +59,7 @@ def login(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, str | int]:
     return {
-        "access_token": issue_demo_token(settings.gradio_username, payload.password, settings),
+        "access_token": issue_demo_token(settings.workspace_username, payload.password, settings),
         "token_type": "bearer",
         "expires_in": 1800,
     }

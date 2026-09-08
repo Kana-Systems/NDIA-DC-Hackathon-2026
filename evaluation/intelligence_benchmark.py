@@ -1,4 +1,4 @@
-"""Deterministic J2 ingestion, grounding, ACL, and workflow benchmark."""
+"""Deterministic J2 ingestion, grounding, ACL, and entity benchmark."""
 
 from __future__ import annotations
 
@@ -12,15 +12,12 @@ from app.config import Settings
 from app.grounding import authorized_evidence
 from app.intelligence import CitedGenerationService, IntelligenceRepository
 from app.models import (
-    AnalystDecisionRequest,
     EntityCandidate,
     Evidence,
     GroundingStatus,
     IntelligenceQuery,
     PrincipalContext,
     ProvenanceLink,
-    ReviewDecision,
-    TargetObjectDraftRequest,
 )
 from ingestion.connectors import FilesystemConnector
 from ingestion.fixtures import FIXTURE_DOCUMENT_COUNT, generate_fixture_corpus
@@ -33,7 +30,7 @@ def run() -> dict[str, object]:
         subject="benchmark-analyst",
         groups=["mission-analysts"],
         security_domain="demo",
-        scopes=["rag:query", "entities:read", "objects:draft", "objects:review"],
+        scopes=["rag:query", "entities:read", "entities:review"],
     )
     with tempfile.TemporaryDirectory() as directory:
         generate_fixture_corpus(directory)
@@ -84,7 +81,7 @@ def run() -> dict[str, object]:
 
     benchmark_settings = Settings(
         bedrock_enabled=False,
-        gradio_password="benchmark-only-password",
+        workspace_password="benchmark-only-password",
         demo_jwt_secret="benchmark-only-signing-secret-32-characters",
     )
     rag = CitedGenerationService(benchmark_settings).generate(
@@ -109,7 +106,7 @@ def run() -> dict[str, object]:
             version="1",
         )
     ]
-    entity = repository.resolve(
+    repository.resolve(
         [
             EntityCandidate(
                 name="Benchmark Organization",
@@ -129,26 +126,6 @@ def run() -> dict[str, object]:
             )
         ]
     )
-    target = repository.create_target_object(
-        TargetObjectDraftRequest(
-            object_type="target-system-object",
-            entity_id=entity.entity_id,
-            requested_fields=["status"],
-        ),
-        principal,
-    )
-    unapproved_export_blocked = False
-    try:
-        repository.export(target.object_id)
-    except PermissionError:
-        unapproved_export_blocked = True
-    repository.decide(
-        target.object_id,
-        AnalystDecisionRequest(decision=ReviewDecision.APPROVED),
-        principal,
-    )
-    approved_export = repository.export(target.object_id)
-
     metrics = {
         "fixture_documents": first.applied.inserted,
         "fixture_records": len(fixture_records),
@@ -157,8 +134,6 @@ def run() -> dict[str, object]:
         "citation_correctness": citation_correctness,
         "acl_leakage_count": acl_leakage_count,
         "change_events": len(repository.list_changes()),
-        "unapproved_export_blocked": unapproved_export_blocked,
-        "approved_json_export": approved_export["object"]["status"] == "approved",
     }
     hard_failures = (
         metrics["fixture_documents"] < FIXTURE_DOCUMENT_COUNT
@@ -167,8 +142,6 @@ def run() -> dict[str, object]:
         or metrics["citation_correctness"] < 1.0
         or metrics["acl_leakage_count"] != 0
         or metrics["change_events"] < 1
-        or not metrics["unapproved_export_blocked"]
-        or not metrics["approved_json_export"]
     )
     return {"passed": not hard_failures, "metrics": metrics}
 

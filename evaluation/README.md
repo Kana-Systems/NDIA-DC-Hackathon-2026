@@ -28,8 +28,8 @@ review. The sample runner mirrors the curated rule IDs in
 
 Run `python -m evaluation.intelligence_benchmark` to exercise the generated
 120-document corpus and report retrieval Recall@k, citation correctness, ACL
-leakage, ingestion idempotency, entity/change behavior, and target-object
-approval enforcement. These metrics are separate from legal accuracy and model
+leakage, ingestion idempotency, and entity/change behavior. These metrics are
+separate from legal accuracy and model
 quality. The fixture corpus is synthetic and is not evidence of access to an
 operational SharePoint tenant or authoritative intelligence store.
 

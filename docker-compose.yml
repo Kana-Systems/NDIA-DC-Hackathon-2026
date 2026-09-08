@@ -4,8 +4,8 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
-      GRADIO_USERNAME: "${GRADIO_USERNAME:-judge}"
-      GRADIO_PASSWORD: "${GRADIO_PASSWORD:?GRADIO_PASSWORD is required}"
+      WORKSPACE_USERNAME: "${WORKSPACE_USERNAME:-judge}"
+      WORKSPACE_PASSWORD: "${WORKSPACE_PASSWORD:?WORKSPACE_PASSWORD is required}"
       MAX_UPLOAD_MB: "${MAX_UPLOAD_MB:-15}"
       BEDROCK_ENABLED: "${BEDROCK_ENABLED:-false}"
       BEDROCK_MODEL_ID: "${BEDROCK_MODEL_ID:-openai.gpt-5.6-terra}"
@@ -38,8 +38,8 @@ services:
     image: curlimages/curl:8.12.1@sha256:94e9e444bcba979c2ea12e27ae39bee4cd10bc7041a472c4727a558e213744e6
     profiles: ["sample"]
     environment:
-      GRADIO_USERNAME: "${GRADIO_USERNAME:-judge}"
-      GRADIO_PASSWORD: "${GRADIO_PASSWORD:?GRADIO_PASSWORD is required}"
+      WORKSPACE_USERNAME: "${WORKSPACE_USERNAME:-judge}"
+      WORKSPACE_PASSWORD: "${WORKSPACE_PASSWORD:?WORKSPACE_PASSWORD is required}"
     depends_on:
       contract-review:
         condition: service_healthy
@@ -47,5 +47,5 @@ services:
     command:
       - >-
         curl -fsS -X POST
-        -u "$${GRADIO_USERNAME}:$${GRADIO_PASSWORD}"
+        -u "$${WORKSPACE_USERNAME}:$${WORKSPACE_PASSWORD}"
         http://contract-review:8080/api/v1/reviews/sample

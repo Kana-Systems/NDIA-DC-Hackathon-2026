@@ -48,15 +48,11 @@ describe('explicit offline demo authorization', () => {
       }
       const body = path.endsWith('/ingestion/status')
         ? { security_domain: 'demo', fixture_documents_expected: 3, durable_documents: null, durable_store_configured: false, graph_connector_configured: false }
-        : path.endsWith('/export')
-          ? { adapter: 'json-export', external_write_performed: false, object: {} }
-          : path.endsWith('/query')
-            ? { response_id: 'r1', generated_at: '2026-01-01T00:00:00Z', query: 'question', mode: 'answer', workflow: 'mission-support', answer: 'answer', statements: [], evidence: [], synthesis_mode: 'extractive' }
-            : path.includes('/target-objects')
-              ? { object_id: 'o1' }
-              : path.includes('/entities/') || path.endsWith('/entities/resolve')
-                ? { entity_id: 'e1' }
-                : []
+        : path.endsWith('/query')
+          ? { response_id: 'r1', generated_at: '2026-01-01T00:00:00Z', query: 'question', mode: 'answer', workflow: 'mission-support', answer: 'answer', statements: [], evidence: [], synthesis_mode: 'extractive' }
+          : path.includes('/entities/') || path.endsWith('/entities/resolve')
+            ? { entity_id: 'e1' }
+            : []
       return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))
     })
     const { apiClient } = await import('./client')
@@ -69,15 +65,11 @@ describe('explicit offline demo authorization', () => {
     await apiClient.getChanges()
     await apiClient.getRelationships()
     await apiClient.decideEntity('entity/1', 'approved', 'Reviewed')
-    await apiClient.createTargetObject({ object_type: 'target-system-object', entity_id: 'e1', requested_fields: ['name'] })
-    await apiClient.decideTargetObject('object/1', 'rejected', 'Insufficient support')
-    await apiClient.exportTargetObject('object/1')
 
     const workflowCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/v1/intelligence/'))
-    expect(workflowCalls).toHaveLength(10)
+    expect(workflowCalls).toHaveLength(7)
     expect(workflowCalls.every(([, init]) => (init?.headers as Record<string, string>).Authorization === 'Bearer j2-token')).toBe(true)
     expect(workflowCalls.map(([input]) => String(input))).toContainEqual(expect.stringContaining('/entities/entity%2F1/decision'))
-    expect(workflowCalls.map(([input]) => String(input))).toContainEqual(expect.stringContaining('/target-objects/object%2F1/export'))
     expect(JSON.parse(workflowCalls[0][1]?.body as string)).toEqual({
       query: 'question', mode: 'answer', workflow: 'mission-support',
       filters: { source_types: [], document_ids: [], entity_ids: [], effective_after: null },

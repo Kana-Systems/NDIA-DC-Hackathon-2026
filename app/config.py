@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,11 +14,18 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        populate_by_name=True,
     )
 
     app_name: str = "Government Contract Review Demo"
-    gradio_username: str = "judge"
-    gradio_password: SecretStr = Field(min_length=12)
+    workspace_username: str = Field(
+        default="judge",
+        validation_alias=AliasChoices("WORKSPACE_USERNAME", "GRADIO_USERNAME"),
+    )
+    workspace_password: SecretStr = Field(
+        min_length=12,
+        validation_alias=AliasChoices("WORKSPACE_PASSWORD", "GRADIO_PASSWORD"),
+    )
     max_upload_mb: int = Field(default=15, ge=1, le=100)
     max_docx_members: int = Field(default=2_000, ge=10, le=20_000)
     max_docx_uncompressed_mb: int = Field(default=50, ge=1, le=500)
@@ -62,7 +69,6 @@ class Settings(BaseSettings):
     document_registry_table: str = ""
     entity_registry_table: str = ""
     change_event_table: str = ""
-    workflow_table: str = ""
     source_bucket: str = ""
     graph_connector_secret_arn: str = ""
 

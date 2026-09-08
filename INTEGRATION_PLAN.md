@@ -19,8 +19,8 @@ bundle is part of the GovCloud container; trained-model promotion remains gated.
 | Data sources | Local catalog of the 20 requested sources, clearly distinguished from evidence actually retrieved by the backend |
 | ML | Existing CUAD preparation/training/evaluation tooling; surface actual model IDs and missing confidence, never manufacture an accuracy score |
 | Knowledge / explanations | Versioned FAR/DFARS corpus with full-text retrieval and source graph; reuse the existing Terra Bedrock transport for query planning and contract review. Model mode is the default local launch. |
-| Uploads / advanced workflows | React PDF/DOCX uploads reuse the repository parser; retain Gradio and J2 workflows |
-| Infrastructure | Build React in the pinned multi-stage image; preserve Gradio; use the Terraform-managed SageMaker bucket and least-privilege training role for model-family experiments |
+| Uploads / advanced workflows | React PDF/DOCX uploads reuse the repository parser and expose the retained RAG and foundational-intelligence workflows |
+| Infrastructure | Build React in the pinned multi-stage image; package the approved Legal-BERT/corpus snapshot; use the Terraform-managed SageMaker bucket and least-privilege training role for model-family experiments |
 
 ## First implementation slice
 
@@ -31,8 +31,8 @@ bundle is part of the GovCloud container; trained-model promotion remains gated.
 3. Collect acquisition metadata in React, load sample metadata, show actual engine
    modes, grounding status and clause inventory, and remove misleading confidence
    or ingestion claims. Keep synthetic sample and live results distinct.
-4. Use a same-origin development proxy and serve a built React app at `/lens/`;
-   keep existing `/ui/` and versioned API routes available.
+4. Use a same-origin development proxy and serve the sole interactive React app
+   at `/lens/`; keep versioned API routes available.
 5. Add local setup/run/check scripts, meaningful API/UI integration tests, and run
    the repository tests and offline benchmarks plus frontend tests/lint/build.
 
@@ -54,7 +54,7 @@ bundle is part of the GovCloud container; trained-model promotion remains gated.
 - React interface, same-origin API, shared identity, metadata collection, actual
   evidence relationships, and PDF/DOCX support are implemented.
 - The React bundle is built in the deployment image, served at `/lens/`, routed
-  by the ALB, and validated in pull-request CI; Gradio remains at `/ui/`.
+  by the ALB, and validated in pull-request CI. The retired `/ui/` is not exposed.
 - SageMaker supports reviewed per-model configurations, model-family S3 prefixes,
   approved instance types, maximum job runtimes, and Legal-BERT/RoBERTa examples.
 - Live Terra access and combined authenticated model review have been verified.

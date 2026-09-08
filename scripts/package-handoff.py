@@ -59,8 +59,7 @@ dependencies and start the app; they do not start training. Installation needs
 internet. Use WSL on Windows for these shell commands.
 
 Open http://127.0.0.1:8080/lens/ . Local demo password: `contract-demo`.
-The advanced interface is http://127.0.0.1:8080/ui/ (username `judge`).
-These are localhost-only demo credentials, not suitable for a public deployment.
+These localhost-only demo credentials are not suitable for a public deployment.
 Press Ctrl+C in the server terminal to stop the app.
 
 ## AWS access for actual LLM reviews

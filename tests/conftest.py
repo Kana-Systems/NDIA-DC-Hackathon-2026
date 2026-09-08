@@ -4,5 +4,5 @@ from __future__ import annotations
 
 import os
 
-os.environ.setdefault("GRADIO_PASSWORD", "pytest-only-password")
+os.environ.setdefault("WORKSPACE_PASSWORD", "pytest-only-password")
 os.environ.setdefault("DEMO_JWT_SECRET", "pytest-only-signing-secret-32-characters")

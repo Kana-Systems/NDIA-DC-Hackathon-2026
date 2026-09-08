@@ -549,6 +549,7 @@ resource "aws_lb" "app" {
   subnets                    = aws_subnet.public[*].id
   drop_invalid_header_fields = true
   enable_deletion_protection = false
+  idle_timeout               = 180
 
   tags = local.common_tags
 }
@@ -626,7 +627,7 @@ resource "aws_lb_listener_rule" "ui_routes" {
 
   condition {
     path_pattern {
-      values = ["/", "/lens", "/lens/*", "/ui", "/ui/*"]
+      values = ["/", "/lens", "/lens/*"]
     }
   }
 }
@@ -678,7 +679,7 @@ resource "aws_ecs_task_definition" "app" {
   family                   = local.name
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = 1024
+  cpu                      = 2048
   memory                   = 4096
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
@@ -697,7 +698,10 @@ resource "aws_ecs_task_definition" "app" {
     environment = [
       { name = "AWS_REGION", value = var.aws_region },
       { name = "CLASSIFIER_ENABLED", value = "true" },
-      { name = "CLASSIFIER_MODEL_DIR", value = "/srv/app/ml/model" },
+      { name = "CLASSIFIER_MODEL_DIR", value = "/srv/app/artifacts/models/legal-bert-cuad" },
+      { name = "MODEL_SELECTION_PATH", value = "/srv/app/artifacts/models/selected.json" },
+      { name = "LOCAL_CORPUS_PATH", value = "/srv/app/artifacts/knowledge/federal-v2.sqlite" },
+      { name = "MODEL_REVIEW_ENABLED", value = "true" },
       { name = "BEDROCK_ENABLED", value = "true" },
       { name = "BEDROCK_MODEL_ID", value = var.bedrock_model_id },
       { name = "EMBEDDING_MODEL_ID", value = var.embedding_model_id },
@@ -716,20 +720,18 @@ resource "aws_ecs_task_definition" "app" {
       { name = "DOCUMENT_REGISTRY_TABLE", value = aws_dynamodb_table.j2_documents.name },
       { name = "ENTITY_REGISTRY_TABLE", value = aws_dynamodb_table.j2_entities.name },
       { name = "CHANGE_EVENT_TABLE", value = aws_dynamodb_table.j2_changes.name },
-      { name = "WORKFLOW_TABLE", value = aws_dynamodb_table.j2_workflows.name },
       { name = "J2_INGESTION_QUEUE_URL", value = aws_sqs_queue.j2_ingestion.url },
       { name = "SOURCE_BUCKET", value = aws_s3_bucket.j2_sources.id },
       { name = "GRAPH_CONNECTOR_SECRET_ARN", value = try(aws_secretsmanager_secret.graph_connector[0].arn, "") },
-      { name = "GRADIO_TEMP_DIR", value = "/tmp/gradio" },
       { name = "HOME", value = "/tmp/home" },
     ]
     secrets = [
       {
-        name      = "GRADIO_USERNAME"
+        name      = "WORKSPACE_USERNAME"
         valueFrom = "${aws_secretsmanager_secret.judge.arn}:username::"
       },
       {
-        name      = "GRADIO_PASSWORD"
+        name      = "WORKSPACE_PASSWORD"
         valueFrom = "${aws_secretsmanager_secret.judge.arn}:password::"
       },
       {

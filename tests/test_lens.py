@@ -17,6 +17,13 @@ def headers(client):
     return {"Authorization": f"Bearer {result.json()['access_token']}"}
 
 
+def test_lens_is_the_only_interactive_ui(client):
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/lens/"
+    assert client.get("/ui/").status_code == 404
+
+
 def test_lens_auth_and_native_report(client):
     assert client.get("/api/sources").status_code == 401
     assert client.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
@@ -44,7 +51,7 @@ def test_lens_requires_context_and_meaningful_input(client):
 
 
 def test_model_mode_does_not_fall_back_without_model():
-    model_client = TestClient(
+    with pytest.raises(RuntimeError, match="trained classifier artifact"):
         create_app(
             Settings(
                 model_review_enabled=True,
@@ -52,12 +59,6 @@ def test_model_mode_does_not_fall_back_without_model():
                 classifier_model_dir="missing-model",
             )
         )
-    )
-    auth = headers(model_client)
-    sample = model_client.get("/api/demo/sample", headers=auth).json()
-    result = model_client.post("/api/analyze", headers=auth, json=sample)
-    assert result.status_code == 503
-    assert "trained classifier" in result.json()["detail"]
 
 
 def test_authenticated_docx_upload_reuses_native_parser(client):

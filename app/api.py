@@ -39,8 +39,6 @@ from app.models import (
     IntelligenceResponse,
     PrincipalContext,
     ReviewReport,
-    TargetObject,
-    TargetObjectDraftRequest,
 )
 from app.parsers import DocumentParser
 from app.sample import sample_contract_bytes, sample_metadata
@@ -61,11 +59,11 @@ def require_judge_credentials(
 
     valid_username = credentials is not None and secrets.compare_digest(
         credentials.username.encode("utf-8"),
-        settings.gradio_username.encode("utf-8"),
+        settings.workspace_username.encode("utf-8"),
     )
     valid_password = credentials is not None and secrets.compare_digest(
         credentials.password.encode("utf-8"),
-        settings.gradio_password.get_secret_value().encode("utf-8"),
+        settings.workspace_password.get_secret_value().encode("utf-8"),
     )
     if not (valid_username and valid_password):
         raise HTTPException(
@@ -77,16 +75,9 @@ def require_judge_credentials(
 
 
 def get_review_service(
-    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
 ) -> ReviewService:
-    if settings.model_review_enabled:
-        from app.model_review import ModelReviewService
-
-        try:
-            return ModelReviewService(settings)
-        except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return ReviewService(settings)
+    return request.app.state.review_service
 
 
 def require_intelligence_principal(
@@ -107,8 +98,6 @@ def require_intelligence_principal(
         scopes=[
             "rag:query",
             "entities:read",
-            "objects:draft",
-            "objects:review",
         ],
     )
 
@@ -126,7 +115,6 @@ def get_intelligence_repository(
     table_names = (
         settings.entity_registry_table,
         settings.change_event_table,
-        settings.workflow_table,
     )
     if not all(table_names):
         return intelligence_repository
@@ -134,7 +122,6 @@ def get_intelligence_repository(
         _aws_repository = DynamoDBIntelligenceRepository(
             entity_table=settings.entity_registry_table,
             change_table=settings.change_event_table,
-            workflow_table=settings.workflow_table,
             region=settings.aws_region,
         )
     return _aws_repository
@@ -294,80 +281,6 @@ def decide_entity(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.post(
-    "/api/v1/intelligence/target-objects",
-    response_model=TargetObject,
-    tags=["intelligence"],
-)
-def create_target_object(
-    payload: TargetObjectDraftRequest,
-    repository: Annotated[
-        IntelligenceRepository,
-        Depends(get_intelligence_repository),
-    ],
-    principal: Annotated[
-        PrincipalContext,
-        Depends(require_intelligence_principal),
-    ],
-) -> TargetObject:
-    try:
-        return repository.create_target_object(payload, principal)
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post(
-    "/api/v1/intelligence/target-objects/{object_id}/decision",
-    response_model=TargetObject,
-    tags=["intelligence"],
-)
-def decide_target_object(
-    object_id: str,
-    payload: AnalystDecisionRequest,
-    repository: Annotated[
-        IntelligenceRepository,
-        Depends(get_intelligence_repository),
-    ],
-    principal: Annotated[
-        PrincipalContext,
-        Depends(require_intelligence_principal),
-    ],
-) -> TargetObject:
-    try:
-        return repository.decide(object_id, payload, principal)
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.get(
-    "/api/v1/intelligence/target-objects/{object_id}/export",
-    tags=["intelligence"],
-)
-def export_target_object(
-    object_id: str,
-    repository: Annotated[
-        IntelligenceRepository,
-        Depends(get_intelligence_repository),
-    ],
-    _principal: Annotated[
-        PrincipalContext,
-        Depends(require_intelligence_principal),
-    ],
-) -> dict[str, object]:
-    try:
-        return repository.export(object_id)
-    except PermissionError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/api/v1/reviews", response_model=ReviewReport, tags=["reviews"])
