@@ -38,8 +38,9 @@ Terraform deploys into `us-gov-west-1` in the `aws-us-gov` partition:
   validated GovCloud VPC endpoints;
 - ECS Fargate with an immutable ECR image digest, deployment rollback,
   Container Insights, and CPU target tracking;
-- an HTTPS ALB, ACM DNS validation, and an alias in an existing Route53 hosted
-  zone/subdomain. The ALB forwards `/`, `/ui`, `/ui/*`, `/api/*`, and
+- an HTTPS ALB using an issued ACM certificate for an externally managed DNS
+  hostname. Squarespace supplies the validation and application CNAME records.
+  The ALB forwards `/`, `/ui`, `/ui/*`, `/api/*`, and
   `/health`; `/docs` and `/openapi.json` remain unexposed. Gradio enforces the
   shared judge credential under `/ui`, and the programmatic `/api/*` routes
   enforce constant-time HTTP Basic credential verification;
@@ -136,8 +137,8 @@ data restrictions remain in force.
 - Python 3.12 and Docker for local use.
 - Terraform 1.10+, AWS CLI v2, PowerShell 7, and GNU Make for deployment.
 - An AWS GovCloud account with access to `us-gov-west-1`.
-- An existing public Route53 hosted zone in the GovCloud account and an unused
-  subdomain such as `review.example.mil`.
+- Control of the external DNS hostname `ndia.kana.systems` in Squarespace and an
+  issued ACM public certificate for that exact hostname in `us-gov-west-1`.
 - A linked AWS commercial account. Accept the provider EULA and enable model
   access for `openai.gpt-5.6-terra` through the linked commercial account before
   deployment. See [Amazon Bedrock model access][bedrock-access] and verify the
@@ -314,6 +315,55 @@ keyword baseline) with `CLASSIFIER_ENABLED=true` (packaged classifier plus the
 same rules/RAG), using the same synthetic inputs and recording the active model
 provenance.
 
+## ACM and Squarespace DNS
+
+DNS for `ndia.kana.systems` remains in Squarespace. Request the certificate in
+the same GovCloud account and region as the ALB:
+
+```bash
+aws acm request-certificate \
+  --region us-gov-west-1 \
+  --domain-name ndia.kana.systems \
+  --validation-method DNS \
+  --key-algorithm RSA_2048
+```
+
+Read the generated validation record:
+
+```bash
+aws acm describe-certificate \
+  --region us-gov-west-1 \
+  --certificate-arn ACM_CERTIFICATE_ARN \
+  --output json
+```
+
+In Squarespace, open the `kana.systems` DNS settings and add the generated CNAME
+under Custom Records. Squarespace appends the root domain automatically, so a
+validation name such as `_token.ndia.kana.systems.` is entered as
+`_token.ndia`. Enter the ACM validation value without its trailing period.
+Retain this record permanently so ACM can renew the certificate.
+
+Wait for issuance before deploying:
+
+```bash
+aws acm wait certificate-validated \
+  --region us-gov-west-1 \
+  --certificate-arn ACM_CERTIFICATE_ARN
+```
+
+Terraform selects the newest issued Amazon certificate matching
+`ndia.kana.systems`. After deployment, read the workflow notice or Terraform
+output `external_dns_cname_target`. Add the application record in Squarespace:
+
+```text
+Type: CNAME
+Name: ndia
+Data: <external_dns_cname_target, without a trailing period>
+```
+
+Do not remove unrelated Squarespace website or email records. After DNS
+propagates, verify `https://ndia.kana.systems/health`.
+
 ## GovCloud deployment
 
 The bootstrap is deliberately out of Terraform because Terraform cannot safely
@@ -328,8 +378,7 @@ gh api repos/OWNER/REPOSITORY \
 make bootstrap \
   GITHUB_REPO=OWNER/REPOSITORY \
   GITHUB_OWNER_ID=1234567 \
-  GITHUB_REPOSITORY_ID=987654321 \
-  HOSTED_ZONE_ID=Z0123456789EXAMPLE
+  GITHUB_REPOSITORY_ID=987654321
 ```
 
 For a private repository, authenticate `gh` explicitly before the lookup
@@ -367,12 +416,16 @@ controls before accepting contributions:
   included synthetic fixtures under Apache-2.0. Attribution files document
   externally sourced material but do not replace that owner approval.
 
-Set the repository variables printed by the script:
+Set the GitHub Actions secrets printed by the script. Repository secrets work;
+placing them in the protected `govcloud-demo` environment is preferred:
 `AWS_GOV_REGION`, `AWS_GOV_ROLE_ARN`, `TF_STATE_BUCKET`, `TF_STATE_KEY`,
-`HOSTED_ZONE_ID`, `APP_DOMAIN`, `BUDGET_ALERT_EMAIL`, and
+`APP_DOMAIN`, `BUDGET_ALERT_EMAIL`, and
 `ALLOWED_INGRESS_CIDRS_JSON` (for example, `["192.0.2.10/32"]`). Terraform has
 no default ingress range; supply only reviewed judge or VPN egress CIDRs.
-Protect changes to `.github/workflows/` and `infra/` with branch review.
+Also set `SECURITY_DOMAIN=demo` and
+`CREATE_GRAPH_CONNECTOR_SECRET=false`. Environment approval occurs before these
+secrets are exposed to the deployment job; pull-request test jobs cannot access
+them. Protect changes to `.github/workflows/` and `infra/` with branch review.
 
 On every push to `main`, `.github/workflows/deploy.yml` runs tests without AWS
 credentials, then waits for `govcloud-demo` environment approval. Only the
@@ -391,8 +444,9 @@ Terraform role. After approval it:
    network to seed sample OpenSearch knowledge and verifies its container exit;
 7. runs a second exact-digest task that durably ingests and verifies at least 120
    synthetic documents in the J2 data plane;
-8. forces ECS deployment, waits for service stability, and smoke-tests
-   `https://APP_DOMAIN/health`.
+8. forces ECS deployment, waits for service stability, and verifies that every
+   registered ALB target is healthy. Public HTTPS is verified after the
+   Squarespace application CNAME is created.
 
 For `workflow_dispatch`, select the `main` branch in GitHub’s “Run workflow”
 dialog. A manual run from any other branch or tag still executes the

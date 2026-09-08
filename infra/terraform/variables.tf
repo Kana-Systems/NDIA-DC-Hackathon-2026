@@ -59,18 +59,8 @@ variable "graph_ingestion_schedule_expression" {
   }
 }
 
-variable "hosted_zone_id" {
-  description = "ID of an existing public Route53 hosted zone in the GovCloud account."
-  type        = string
-
-  validation {
-    condition     = can(regex("^Z[A-Z0-9]+$", var.hosted_zone_id))
-    error_message = "hosted_zone_id must be a Route53 hosted zone ID."
-  }
-}
-
 variable "domain_name" {
-  description = "Existing subdomain to assign to the ALB, for example review.example.mil."
+  description = "Externally managed DNS hostname assigned to the ALB, for example ndia.kana.systems."
   type        = string
 
   validation {

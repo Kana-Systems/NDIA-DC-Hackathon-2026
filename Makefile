@@ -8,12 +8,10 @@ bootstrap:
 	@test -n "$(GITHUB_REPO)" || (echo "Set GITHUB_REPO=owner/repo" >&2; exit 2)
 	@test -n "$(GITHUB_OWNER_ID)" || (echo "Set GITHUB_OWNER_ID to the numeric owner ID" >&2; exit 2)
 	@test -n "$(GITHUB_REPOSITORY_ID)" || (echo "Set GITHUB_REPOSITORY_ID to the numeric repository ID" >&2; exit 2)
-	@test -n "$(HOSTED_ZONE_ID)" || (echo "Set HOSTED_ZONE_ID=Z..." >&2; exit 2)
 	pwsh -NoProfile -File scripts/bootstrap-govcloud.ps1 \
 		-GitHubRepo "$(GITHUB_REPO)" \
 		-GitHubOwnerId "$(GITHUB_OWNER_ID)" \
-		-GitHubRepositoryId "$(GITHUB_REPOSITORY_ID)" \
-		-HostedZoneId "$(HOSTED_ZONE_ID)"
+		-GitHubRepositoryId "$(GITHUB_REPOSITORY_ID)"
 
 tf-init:
 	@test -n "$(TF_STATE_BUCKET)" || (echo "Set TF_STATE_BUCKET" >&2; exit 2)

@@ -24,7 +24,7 @@ def test_runtime_secrets_have_no_insecure_defaults(monkeypatch) -> None:
     monkeypatch.delenv("DEMO_JWT_SECRET")
 
     with pytest.raises(ValidationError):
-        Settings()
+        Settings(_env_file=None)
 
 
 def test_health_is_public() -> None:

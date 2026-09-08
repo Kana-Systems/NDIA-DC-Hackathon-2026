@@ -1,5 +1,4 @@
-hosted_zone_id     = "Z0123456789EXAMPLE"
-domain_name        = "review.example.mil"
+domain_name        = "ndia.kana.systems"
 budget_alert_email = "platform-team@example.mil"
 security_domain    = "demo"
 

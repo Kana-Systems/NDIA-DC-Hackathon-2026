@@ -12,10 +12,6 @@ param(
     [ValidatePattern('^[1-9][0-9]*$')]
     [string]$GitHubRepositoryId,
 
-    [Parameter(Mandatory)]
-    [ValidatePattern('^Z[A-Z0-9]+$')]
-    [string]$HostedZoneId,
-
     [ValidatePattern('^us-gov-')]
     [string]$Region = 'us-gov-west-1',
 
@@ -290,22 +286,11 @@ try {
                 }
             },
             @{
-                Sid      = 'Route53Zone'
-                Effect   = 'Allow'
-                Action   = @('route53:GetHostedZone', 'route53:ListResourceRecordSets', 'route53:ChangeResourceRecordSets')
-                Resource = "arn:aws-us-gov:route53:::hostedzone/$HostedZoneId"
-            },
-            @{
-                Sid      = 'Route53Read'
-                Effect   = 'Allow'
-                Action   = @('route53:ListHostedZones', 'route53:ListHostedZonesByName', 'route53:GetChange')
-                Resource = '*'
-            },
-            @{
                 Sid    = 'ProvisionProjectInfrastructure'
                 Effect = 'Allow'
                 Action = @(
-                    'acm:*', 'application-autoscaling:*', 'budgets:*', 'cloudwatch:*', 'ec2:*',
+                    'acm:DescribeCertificate', 'acm:ListCertificates',
+                    'application-autoscaling:*', 'budgets:*', 'cloudwatch:*', 'ec2:*',
                     'dynamodb:*', 'ecs:*', 'elasticloadbalancing:*', 'es:*', 'kms:*', 'logs:*',
                     'scheduler:*', 'secretsmanager:*', 'sqs:*'
                 )
@@ -338,12 +323,11 @@ finally {
 @"
 Bootstrap complete.
 
-GitHub repository variables:
+GitHub Actions secrets (prefer the `govcloud-demo` environment):
   AWS_GOV_REGION=$Region
   AWS_GOV_ROLE_ARN=$RoleArn
   TF_STATE_BUCKET=$Bucket
   TF_STATE_KEY=$StateKey
-  HOSTED_ZONE_ID=$HostedZoneId
   SECURITY_DOMAIN=$SecurityDomain
   CREATE_GRAPH_CONNECTOR_SECRET=false
 
@@ -352,7 +336,7 @@ Immutable GitHub identity:
   REPOSITORY_ID=$GitHubRepositoryId
 
 Also configure:
-  APP_DOMAIN                   existing subdomain, such as review.example.mil
+  APP_DOMAIN                   externally managed hostname, such as ndia.kana.systems
   BUDGET_ALERT_EMAIL           operational alert recipient
   ALLOWED_INGRESS_CIDRS_JSON   reviewed JSON list, such as ["192.0.2.10/32"]
 

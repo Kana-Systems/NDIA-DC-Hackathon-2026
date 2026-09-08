@@ -3,6 +3,26 @@ output "application_url" {
   value       = "https://${var.domain_name}"
 }
 
+output "external_dns_cname_name" {
+  description = "Hostname to create as a CNAME in the external DNS provider."
+  value       = var.domain_name
+}
+
+output "external_dns_cname_target" {
+  description = "ALB DNS name to use as the external CNAME target."
+  value       = aws_lb.app.dns_name
+}
+
+output "acm_certificate_arn" {
+  description = "Issued externally validated ACM certificate selected for the application."
+  value       = data.aws_acm_certificate.app.arn
+}
+
+output "target_group_arn" {
+  description = "Application target group checked by the deployment workflow."
+  value       = aws_lb_target_group.app.arn
+}
+
 output "ecr_repository_url" {
   description = "ECR repository URL used by CI."
   value       = aws_ecr_repository.app.repository_url
