@@ -30,6 +30,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$env:AWS_PAGER = ''
 
 if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
     throw 'AWS CLI v2 is required.'
@@ -289,7 +290,7 @@ try {
                 Sid    = 'ProvisionProjectInfrastructure'
                 Effect = 'Allow'
                 Action = @(
-                    'acm:DescribeCertificate', 'acm:ListCertificates',
+                    'acm:DescribeCertificate', 'acm:GetCertificate', 'acm:ListCertificates',
                     'application-autoscaling:*', 'budgets:*', 'cloudwatch:*', 'ec2:*',
                     'dynamodb:*', 'ecs:*', 'elasticloadbalancing:*', 'es:*', 'kms:*', 'logs:*',
                     'scheduler:*', 'secretsmanager:*', 'sqs:*'
