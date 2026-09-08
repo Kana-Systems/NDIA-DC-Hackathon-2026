@@ -262,6 +262,17 @@ try {
                 Resource = "arn:aws-us-gov:iam::$AccountId`:role/$Project-*"
             },
             @{
+                Sid    = 'ProjectManagedPolicies'
+                Effect = 'Allow'
+                Action = @(
+                    'iam:CreatePolicy', 'iam:DeletePolicy', 'iam:GetPolicy',
+                    'iam:CreatePolicyVersion', 'iam:DeletePolicyVersion', 'iam:GetPolicyVersion',
+                    'iam:ListPolicyVersions', 'iam:ListEntitiesForPolicy',
+                    'iam:TagPolicy', 'iam:UntagPolicy'
+                )
+                Resource = "arn:aws-us-gov:iam::$AccountId`:policy/$Project-*"
+            },
+            @{
                 Sid       = 'PassProjectRoles'
                 Effect    = 'Allow'
                 Action    = 'iam:PassRole'
