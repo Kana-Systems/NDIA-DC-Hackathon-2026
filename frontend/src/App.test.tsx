@@ -2,211 +2,113 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { apiClient } from './api/client'
 
-const analysisPayload = {
-  analysis_id: 'test-analysis', title: 'Test',
-  document_summary: 'A test solicitation with one clause that requires review.',
-  overall_risk: 'high', confidence: 0.92, engine: 'deterministic-demo-v1',
-  disclaimer: 'Demo screening output only—not legal advice.',
-  findings: [{
-    id: 'ip-rights', category: 'Data & IP rights', title: 'Unlimited rights require review',
-    severity: 'high', confidence: 0.94, status: 'flagged', excerpt: '“unlimited rights”',
-    explanation: 'The language may reach background intellectual property.',
-    recommendation: 'Request a rights allocation review.',
-    citations: [{ title: 'DFARS', url: 'https://www.acquisition.gov/dfars', section: 'Part 227', verification_status: 'official_source_applicability_unverified' }],
-  }],
-  graph: { nodes: [], edges: [] },
-  report: {
-    report_id: 'report-1',
-    synthesis_mode: 'deterministic-demo-v1',
-    classifier_model_ids: ['deterministic-keyword-v1'],
-    clause_status_inventory: [],
-    corpus_manifest: {},
-    knowledge_graph: {},
-  },
-}
-
-const backendSample = {
-  metadata: { agency: 'Department of Defense', solicitation_number: 'DEMO-1', contract_type: 'firm-fixed-price', estimated_value: 1500000, set_aside: 'Small Business', commercial_product: false, cots_only: false, performance_months: 12, place_of_performance: 'Virginia', acquisition_stage: 'solicitation' },
-  title: 'Sentinel Data Services — Draft Solicitation',
-  text: `The Government owns all right, title, and interest in all data and software used during performance.
-  FAR 52.249-2 Termination for Convenience applies to this fictional sample document.`,
-}
-
-function jsonResponse(body: unknown) {
-  return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-}
-
-describe('Acquisition Lens workflow', () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks() })
-
-  it('authenticates, sends a bearer token, and produces source-backed findings', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
-      const url = String(input)
-      if (url.endsWith('/api/auth/login')) return jsonResponse({ access_token: 'opaque-test-token', token_type: 'bearer', expires_in: 14400 })
-      if (url.endsWith('/api/demo/sample')) return jsonResponse(backendSample)
-      if (url.endsWith('/api/analyze')) return jsonResponse(analysisPayload)
-      return jsonResponse([])
-    })
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.type(screen.getByLabelText(/workspace password/i), 'safe-password')
-    await user.click(screen.getByRole('button', { name: /enter workspace/i }))
-    expect(await screen.findByRole('heading', { name: /find the clause/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /legal contract review/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /governed rag intelligence/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /foundational intelligence/i })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /load judge-ready sample/i }))
-    expect(await screen.findByDisplayValue(backendSample.title)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /analyze contract/i }))
-
-    expect(await screen.findByRole('heading', { name: /analysis results/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /unlimited rights require review/i })).toBeInTheDocument()
-    expect(screen.getByText(/human review required/i)).toBeInTheDocument()
-    expect(screen.getByText(/demo screening output only/i)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /analysis results/i })).toHaveFocus()
-    const sampleCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/api/demo/sample'))
-    expect((sampleCall?.[1]?.headers as Record<string, string>).Authorization).toBe('Bearer opaque-test-token')
-    const analyzeCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/api/analyze'))
-    expect((analyzeCall?.[1]?.headers as Record<string, string>).Authorization).toBe('Bearer opaque-test-token')
-    expect(JSON.parse(analyzeCall?.[1]?.body as string).metadata).toEqual(backendSample.metadata)
+// Isolated UI fixtures, never included in deployed workspace data.
+const doc = { id: 'document-1', kind: 'document', title: 'Uploaded agreement', text: 'The supplier warrants the original equipment for twelve months. '.repeat(3), category: 'contract', version: 'v1', metadata: null, revision: 1, owner: 'reviewer', created_at: '2026-09-08T12:00:00Z', updated_at: '2026-09-08T12:00:00Z', status: 'ready' }
+const analysis = { document_summary: 'An uploaded agreement.', overall_risk: 'high', engine: 'test-engine', disclaimer: 'Human review required.', report: { classifier_model_ids: ['test-classifier'] }, findings: [{ id: 'warranty', title: 'Warranty requires review', category: 'Warranty', severity: 'high', excerpt: 'twelve months', explanation: 'Compare against the approved playbook.', recommendation: 'Confirm the required duration.', grounding_status: 'verified', citations: [{ title: 'Approved playbook', url: 'https://example.org/playbook', section: 'Warranty', excerpt: 'The required warranty duration.', verification_status: 'retrieved_evidence' }] }] }
+function json(body: unknown) { return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })) }
+function mockApi(documents: unknown[] = [], custom?: (url: string, init?: RequestInit) => ReturnType<typeof json> | undefined) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+    const url = String(input)
+    const override = custom?.(url, init)
+    if (override) return override
+    if (url.endsWith('/api/auth/login')) return json({ access_token: 'test-token', token_type: 'bearer' })
+    if (url.endsWith('/documents')) return json(documents)
+    if (url.endsWith('/documents/document-1')) return json(doc)
+    if (url.includes('/library?')) return json({ corpus: null, evidence: [], documents: [], catalog: [{ id: 'far', title: 'FAR Part 52', url: 'https://www.acquisition.gov/far/part-52', authority: 'Official', category: 'Federal rules' }] })
+    if (url.endsWith('/connections')) return json({ connections: [], shared_folder_available: false, sharepoint_available: false, automatic_sync_seconds: 0, persistence: 'dynamodb', security_domain: 'demo' })
+    return json([])
   })
-
-  it('rejects short submissions with an accessible error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(() => jsonResponse({ access_token: 'token', token_type: 'bearer' }))
-    const user = userEvent.setup()
-    render(<App />)
-    await user.type(screen.getByLabelText(/workspace password/i), 'safe-password')
-    await user.click(screen.getByRole('button', { name: /enter workspace/i }))
-    await waitFor(() => expect(screen.getByRole('heading', { name: /find the clause/i })).toBeInTheDocument())
-    await user.type(screen.getByLabelText(/contract or solicitation text/i), 'Too short')
-    await user.click(screen.getByRole('button', { name: /analyze contract/i }))
-    expect(screen.getByRole('alert')).toHaveTextContent(/at least 80 characters/i)
+}
+async function login() {
+  const user = userEvent.setup()
+  render(<App />)
+  await user.type(screen.getByLabelText(/workspace password/i), 'test-password')
+  await user.click(screen.getByRole('button', { name: /enter workspace/i }))
+  await screen.findByRole('heading', { name: /your contract workspace/i })
+  return user
+}
+describe('Connected Lens workspace', () => {
+  afterEach(() => { cleanup(); apiClient.logout(); vi.restoreAllMocks() })
+  it('authenticates and loads only persisted documents without seeded samples', async () => {
+    const fetch = mockApi([doc])
+    await login()
+    expect(await screen.findByText(doc.title)).toBeInTheDocument()
+    const call = fetch.mock.calls.find(([url]) => String(url).endsWith('/documents'))
+    expect((call?.[1]?.headers as Record<string, string>).Authorization).toBe('Bearer test-token')
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('/demo/'))).toBe(false)
+    expect(localStorage).toHaveLength(0)
+    expect(sessionStorage).toHaveLength(0)
   })
-
-  it('fails closed when the backend cannot authenticate', async () => {
+  it('validates input and saves the actual supplied text before reviewing', async () => {
+    const fetch = mockApi([], (url, init) => url.endsWith('/documents') && init?.method === 'POST' ? json(doc) : undefined)
+    const user = await login()
+    await user.click(screen.getByRole('button', { name: /add contract/i }))
+    await user.type(screen.getByLabelText(/document title/i), doc.title)
+    await user.type(screen.getByLabelText(/^contract text$/i), 'Too short')
+    await user.click(screen.getByRole('button', { name: /save to workspace/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/at least 80 characters/i)
+    await user.clear(screen.getByLabelText(/^contract text$/i))
+    await user.type(screen.getByLabelText(/^contract text$/i), doc.text)
+    await user.click(screen.getByRole('button', { name: /save to workspace/i }))
+    expect(await screen.findByRole('heading', { name: doc.title })).toBeInTheDocument()
+    const save = fetch.mock.calls.find(([url, init]) => String(url).endsWith('/documents') && init?.method === 'POST')
+    expect(JSON.parse(save?.[1]?.body as string)).toEqual({ title: doc.title, text: doc.text, category: 'contract' })
+    expect(screen.getByRole('button', { name: /set up review/i })).toBeInTheDocument()
+  })
+  it('fails closed when authentication is unavailable', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('offline'))
     const user = userEvent.setup()
     render(<App />)
-    await user.type(screen.getByLabelText(/workspace password/i), 'any-password')
+    await user.type(screen.getByLabelText(/workspace password/i), 'password')
     await user.click(screen.getByRole('button', { name: /enter workspace/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/local api is unavailable/i)
-    expect(screen.queryByRole('heading', { name: /find the clause/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
-
-  it('maps and authorizes the backend source catalog', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
-      const url = String(input)
-      if (url.endsWith('/api/auth/login')) return jsonResponse({ access_token: 'source-token', token_type: 'bearer' })
-      if (url.endsWith('/api/sources')) return jsonResponse([{
-        id: 'far-part-52',
-        title: 'FAR Part 52 — Solicitation Provisions and Contract Clauses',
-        authority: 'Official',
-        category: 'Federal rules and clauses',
-        description: 'Official clauses.',
-        url: 'https://www.acquisition.gov/far/part-52',
-      }])
-      return jsonResponse([])
-    })
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.type(screen.getByLabelText(/workspace password/i), 'safe-password')
-    await user.click(screen.getByRole('button', { name: /enter workspace/i }))
-    await user.click(await screen.findByRole('button', { name: /source library/i }))
-
-    expect(await screen.findByRole('heading', { name: /far part 52/i })).toBeInTheDocument()
-    expect(screen.getByText('Authoritative')).toBeInTheDocument()
-    const sourceCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/api/sources'))
-    expect((sourceCall?.[1]?.headers as Record<string, string>).Authorization).toBe('Bearer source-token')
-  })
-
-  it('navigates the J2 screens and renders only live cited query results', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
-      const url = String(input)
-      if (url.endsWith('/api/auth/login')) return jsonResponse({ access_token: 'j2-token', token_type: 'bearer' })
-      if (url.endsWith('/api/v1/intelligence/query')) return jsonResponse({
-        response_id: 'response-1',
-        generated_at: '2026-09-08T12:00:00Z',
-        query: 'What changed?',
-        mode: 'answer',
-        workflow: 'mission-support',
-        answer: 'A live, cited answer.',
-        statements: [{ text: 'Statement from the service.', citation_ids: ['source-1'], grounding_status: 'verified' }],
-        evidence: [{
-          evidence_id: 'source-1', source: 'Live fixture', title: 'Source record', excerpt: 'Supporting passage.',
-          url: null, document_id: 'doc-1', version: '1', security_label: 'public', acl_principals: ['public'], entity_ids: [],
-        }],
-        synthesis_mode: 'extractive',
-      })
-      if (url.endsWith('/api/v1/intelligence/ingestion/status')) return jsonResponse({
-        security_domain: 'demo', fixture_documents_expected: 3, durable_documents: 7,
-        durable_store_configured: true, graph_connector_configured: false,
-      })
-      return jsonResponse([])
-    })
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.type(screen.getByLabelText(/workspace password/i), 'safe-password')
-    await user.click(screen.getByRole('button', { name: /enter workspace/i }))
-    await user.click(await screen.findByRole('button', { name: /cited intelligence/i }))
-    expect(screen.getByRole('heading', { name: /query and draft/i })).toBeInTheDocument()
-    await user.type(screen.getByLabelText(/intelligence request/i), 'What changed?')
-    await user.click(screen.getByRole('button', { name: /run cited query/i }))
-    expect(await screen.findByText('A live, cited answer.')).toBeInTheDocument()
-    expect(screen.getByText('Statement from the service.')).toBeInTheDocument()
-    expect(screen.getByText('Supporting passage.')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /^ingestion$/i }))
-    expect(await screen.findByText('7')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /^foundations$/i }))
-    expect(screen.getByRole('heading', { name: /resolve entities and review change/i })).toBeInTheDocument()
+  it('navigates the six connected workspaces and distinguishes catalog from indexed data', async () => {
+    mockApi()
+    const user = await login()
+    await user.click(screen.getByRole('button', { name: /source library/i }))
+    await screen.findByRole('heading', { name: /source library/i })
+    await user.click(screen.getByRole('button', { name: /available sources/i }))
+    expect(await screen.findByText('FAR Part 52')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /data connections/i }))
+    expect(await screen.findByText(/dynamodb/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /entities & relationships/i }))
+    expect(await screen.findByRole('heading', { name: /entities & relationships/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /reviewed records/i }))
+    expect(await screen.findByRole('heading', { name: /reviewed records/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /target objects/i })).not.toBeInTheDocument()
-
-    const queryCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/api/v1/intelligence/query'))
-    expect((queryCall?.[1]?.headers as Record<string, string>).Authorization).toBe('Bearer j2-token')
-    expect(JSON.parse(queryCall?.[1]?.body as string)).toMatchObject({
-      query: 'What changed?', mode: 'answer', workflow: 'mission-support',
-    })
   })
-
-  it('renders hostile analysis strings as inert text', async () => {
-    const hostile = '<img src=x onerror="globalThis.__qaExecuted=true"><script>globalThis.__qaExecuted=true</script>'
-    const payload = {
-      ...analysisPayload,
-      findings: [{
-        ...analysisPayload.findings[0],
-        title: hostile,
-        excerpt: hostile,
-        explanation: hostile,
-        recommendation: hostile,
-      }],
-    }
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
-      const url = String(input)
-      if (url.endsWith('/api/auth/login')) return jsonResponse({ access_token: 'safe-token', token_type: 'bearer' })
-      if (url.endsWith('/api/analyze')) return jsonResponse(payload)
-      return jsonResponse([])
+  it('renders saved findings safely and retains contract context in follow-up questions', async () => {
+    const hostile = '<img src=x onerror="alert(1)">'
+    const questions: unknown[] = []
+    const fetch = mockApi([doc], (url, init) => {
+      if (url.endsWith('/reviews')) return json([{ id: 'review-1', document_id: doc.id, document_version: doc.version, decision: 'draft', revision: 1, note: '', analysis: { ...analysis, findings: [{ ...analysis.findings[0], title: hostile }] } }])
+      if (url.endsWith('/questions')) {
+        if (init?.method === 'POST') questions.push({ id: 'question-1', document_id: doc.id, query: 'What warranty applies?', response: { answer: 'Grounded answer from the service.', synthesis_mode: 'test-engine', statements: [], evidence: [] } })
+        return json(questions)
+      }
     })
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.type(screen.getByLabelText(/workspace password/i), 'safe-password')
-    await user.click(screen.getByRole('button', { name: /enter workspace/i }))
-    await user.type(await screen.findByLabelText(/contract or solicitation text/i), 'x'.repeat(100))
-    await user.type(screen.getByLabelText(/^agency$/i), 'Department of Defense')
-    await user.type(screen.getByLabelText(/^solicitation number$/i), 'DEMO-1')
-    await user.type(screen.getByLabelText(/^place of performance$/i), 'Virginia')
-    await user.click(screen.getByRole('button', { name: /analyze contract/i }))
-
+    const user = await login()
+    await user.click(await screen.findByText(doc.title))
     expect(await screen.findByRole('heading', { name: hostile })).toBeInTheDocument()
-    expect(screen.getAllByText(hostile).length).toBeGreaterThanOrEqual(4)
     expect(document.querySelector('img[src="x"]')).toBeNull()
-    expect(document.querySelector('.finding-card script')).toBeNull()
-    expect((globalThis as typeof globalThis & { __qaExecuted?: boolean }).__qaExecuted).toBeUndefined()
-    expect(localStorage).toHaveLength(0)
-    expect(sessionStorage).toHaveLength(0)
+    await user.click(screen.getByRole('tab', { name: /ask this contract/i }))
+    await user.type(screen.getByLabelText(/question or drafting request/i), 'What warranty applies?')
+    await user.click(screen.getByRole('button', { name: /ask \/ generate/i }))
+    expect(await screen.findByText('Grounded answer from the service.')).toBeInTheDocument()
+    const call = fetch.mock.calls.find(([url, init]) => String(url).endsWith('/questions') && init?.method === 'POST')
+    expect(JSON.parse(call?.[1]?.body as string)).toMatchObject({ document_id: doc.id, query: 'What warranty applies?', mode: 'answer' })
+  })
+  it('clears credentials on sign out', async () => {
+    const fetch = mockApi()
+    const user = await login()
+    await user.click(screen.getByRole('button', { name: /sign out/i }))
+    await waitFor(() => expect(screen.getByLabelText(/workspace password/i)).toBeInTheDocument())
+    await apiClient.getSample()
+    const call = fetch.mock.calls.at(-1)
+    expect((call?.[1]?.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 })

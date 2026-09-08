@@ -17,6 +17,9 @@ services:
       IDENTITY_MODE: "${IDENTITY_MODE:-demo}"
       DEMO_IDENTITY_ENABLED: "${DEMO_IDENTITY_ENABLED:-true}"
       DEMO_JWT_SECRET: "${DEMO_JWT_SECRET:?DEMO_JWT_SECRET is required}"
+      WORKSPACE_DB_PATH: /srv/app/artifacts/workspace/lens.sqlite
+    volumes:
+      - lens-workspace:/srv/app/artifacts/workspace
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -49,3 +52,6 @@ services:
         curl -fsS -X POST
         -u "$${WORKSPACE_USERNAME}:$${WORKSPACE_PASSWORD}"
         http://contract-review:8080/api/v1/reviews/sample
+
+volumes:
+  lens-workspace:

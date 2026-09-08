@@ -718,6 +718,7 @@ resource "aws_ecs_task_definition" "app" {
       { name = "DEMO_IDENTITY_ENABLED", value = "true" },
       { name = "ENTERPRISE_INDEX", value = local.j2_enterprise_index },
       { name = "DOCUMENT_REGISTRY_TABLE", value = aws_dynamodb_table.j2_documents.name },
+      { name = "WORKSPACE_TABLE", value = aws_dynamodb_table.lens_workspace.name },
       { name = "ENTITY_REGISTRY_TABLE", value = aws_dynamodb_table.j2_entities.name },
       { name = "CHANGE_EVENT_TABLE", value = aws_dynamodb_table.j2_changes.name },
       { name = "J2_INGESTION_QUEUE_URL", value = aws_sqs_queue.j2_ingestion.url },
@@ -931,4 +932,3 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
 
   tags = local.common_tags
 }
-

@@ -6,6 +6,7 @@ locals {
     aws_dynamodb_table.j2_documents.arn,
     aws_dynamodb_table.j2_entities.arn,
     aws_dynamodb_table.j2_changes.arn,
+    aws_dynamodb_table.lens_workspace.arn,
   ]
 
   j2_environment = [
