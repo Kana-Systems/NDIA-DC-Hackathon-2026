@@ -292,6 +292,7 @@ jobs:
               + " containerReason=\($container.reason // "none")"
           ' <<<"$task_result"
 
+          task_id="${task_arn##*/}"
           if ! jq -e '
             ((.failures // []) | length == 0)
             and (.tasks | length == 1)
@@ -300,6 +301,12 @@ jobs:
               .name == "knowledge-index" and .exitCode == 0
             )
           ' <<<"$task_result" >/dev/null; then
+            aws logs get-log-events \
+              --region "$AWS_REGION" \
+              --log-group-name "/ecs/${cluster}" \
+              --log-stream-name "knowledge-index/knowledge-index/${task_id}" \
+              --query 'events[].message' \
+              --output text >&2 || true
             echo "Knowledge indexing task failed." >&2
             exit 1
           fi

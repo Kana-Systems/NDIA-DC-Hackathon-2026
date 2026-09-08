@@ -795,6 +795,7 @@ resource "aws_ecs_task_definition" "knowledge_index" {
     name      = "knowledge-index"
     image     = var.image_uri
     essential = true
+    user      = "0"
     command = [
       "/bin/sh",
       "-c",
