@@ -12,23 +12,31 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     HOME=/tmp/app-home \
-    GRADIO_TEMP_DIR=/tmp/gradio \
-    GRADIO_ANALYTICS_ENABLED=False \
     HF_HOME=/tmp/huggingface
 
 RUN groupadd --system app && useradd --system --gid app --create-home app
 WORKDIR /srv/app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --requirement requirements.txt
+COPY requirements.txt ml/requirements-inference.txt ./
+RUN pip install --no-cache-dir --requirement requirements.txt \
+    && pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch==2.8.0 \
+    && pip install --no-cache-dir --requirement requirements-inference.txt
 
 COPY app ./app
 COPY ingestion ./ingestion
 COPY ml ./ml
 COPY knowledge ./knowledge
+COPY artifacts/models/legal-bert-cuad ./artifacts/models/legal-bert-cuad
+COPY artifacts/models/selected.json ./artifacts/models/selected.json
+COPY artifacts/knowledge/federal-v2.sqlite ./artifacts/knowledge/federal-v2.sqlite
+COPY scripts/verify-shared-artifacts.py ./scripts/verify-shared-artifacts.py
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 COPY docker-entrypoint.py /usr/local/bin/app-entrypoint
-RUN chown -R app:app /srv/app && chmod 0555 /usr/local/bin/app-entrypoint
+RUN python scripts/verify-shared-artifacts.py \
+    && chown -R app:app /srv/app \
+    && chmod 0555 /usr/local/bin/app-entrypoint
 
 USER app
 ENTRYPOINT ["python", "/usr/local/bin/app-entrypoint"]

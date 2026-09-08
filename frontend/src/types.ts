@@ -21,7 +21,12 @@ export const emptyMetadata: AcquisitionMetadata = {
 }
 
 export interface NativeReport {
-  corpus_manifest?: { documents: number; chunks: number; links: number; retrieved_at: string }
+  corpus_manifest?: {
+    documents?: number
+    chunks?: number
+    links?: number
+    retrieved_at?: string
+  }
   knowledge_graph?: { source_references?: { source: string; target: string; relation: string }[] }
   report_id: string
   synthesis_mode: string
@@ -188,36 +193,4 @@ export interface Relationship {
   target_entity_id: string
   citation_ids: string[]
   grounding_status: GroundingStatus
-}
-
-export interface TargetField {
-  name: string
-  value: EntityAttribute
-  citation_ids: string[]
-  grounding_status: GroundingStatus
-}
-
-export interface TargetObject {
-  object_id: string
-  object_type: string
-  entity_id: string
-  fields: TargetField[]
-  relationships: Relationship[]
-  status: ReviewDecision
-  analyst: string | null
-  review_note: string
-  created_at: string
-  updated_at: string
-}
-
-export interface TargetObjectDraftRequest {
-  object_type: string
-  entity_id: string
-  requested_fields: string[]
-}
-
-export interface TargetObjectExport {
-  adapter: string
-  external_write_performed: boolean
-  object: TargetObject
 }

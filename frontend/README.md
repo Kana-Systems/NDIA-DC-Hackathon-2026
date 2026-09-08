@@ -16,7 +16,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173/lens/`. Vite proxies `/api` to port 8080. The built
 bundle is served directly at `http://127.0.0.1:8080/lens/`. Sign in using the
-backend's `GRADIO_PASSWORD` (`contract-demo` with the local run script).
+backend's `WORKSPACE_PASSWORD` (`contract-demo` with the local run script).
 
 To point at another API, set `VITE_API_BASE_URL` in `.env`.
 

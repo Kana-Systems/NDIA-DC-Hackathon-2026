@@ -6,7 +6,6 @@ locals {
     aws_dynamodb_table.j2_documents.arn,
     aws_dynamodb_table.j2_entities.arn,
     aws_dynamodb_table.j2_changes.arn,
-    aws_dynamodb_table.j2_workflows.arn,
   ]
 
   j2_environment = [
@@ -15,7 +14,6 @@ locals {
     { name = "DOCUMENT_REGISTRY_TABLE", value = aws_dynamodb_table.j2_documents.name },
     { name = "ENTITY_REGISTRY_TABLE", value = aws_dynamodb_table.j2_entities.name },
     { name = "CHANGE_EVENT_TABLE", value = aws_dynamodb_table.j2_changes.name },
-    { name = "WORKFLOW_TABLE", value = aws_dynamodb_table.j2_workflows.name },
     { name = "J2_INGESTION_QUEUE_URL", value = aws_sqs_queue.j2_ingestion.url },
     { name = "J2_KMS_KEY_ARN", value = aws_kms_key.j2.arn },
     { name = "SOURCE_BUCKET", value = aws_s3_bucket.j2_sources.id },
@@ -213,30 +211,6 @@ resource "aws_dynamodb_table" "j2_changes" {
 
   attribute {
     name = "change_id"
-    type = "S"
-  }
-
-  point_in_time_recovery {
-    enabled = true
-  }
-
-  server_side_encryption {
-    enabled     = true
-    kms_key_arn = aws_kms_key.j2.arn
-  }
-
-  tags = merge(local.common_tags, {
-    SecurityDomain = var.security_domain
-  })
-}
-
-resource "aws_dynamodb_table" "j2_workflows" {
-  name         = "${local.j2_name}-workflows"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "object_id"
-
-  attribute {
-    name = "object_id"
     type = "S"
   }
 

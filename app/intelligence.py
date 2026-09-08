@@ -1,4 +1,4 @@
-"""Cited RAG, foundational intelligence, and reviewed target-object workflows."""
+"""Cited RAG and foundational intelligence workflows."""
 
 from __future__ import annotations
 
@@ -31,11 +31,7 @@ from app.models import (
     PrincipalContext,
     Relationship,
     ReviewDecision,
-    TargetField,
-    TargetObject,
-    TargetObjectDraftRequest,
 )
-from app.target_adapters import JsonExportAdapter, TargetSchemaRegistry
 from ingestion.fixtures import FIXTURE_DOCUMENT_COUNT
 
 MISSION_EVIDENCE = (
@@ -288,11 +284,9 @@ class IntelligenceRepository:
 
     def __init__(
         self,
-        target_schemas: TargetSchemaRegistry | None = None,
         known_citation_ids: set[str] | None = None,
     ) -> None:
         self._lock = threading.RLock()
-        self._target_schemas = target_schemas or TargetSchemaRegistry()
         self._known_citation_ids = known_citation_ids or {
             item.evidence_id for item in MISSION_EVIDENCE
         }
@@ -300,7 +294,6 @@ class IntelligenceRepository:
         self._entity_keys: dict[tuple[str, str], str] = {}
         self._changes: list[ChangeEvent] = []
         self._relationships: dict[str, Relationship] = {}
-        self._objects: dict[str, TargetObject] = {}
 
     def resolve(self, candidates: Sequence[EntityCandidate]) -> list[IntelligenceEntity]:
         resolved: list[IntelligenceEntity] = []
@@ -450,8 +443,8 @@ class IntelligenceRepository:
         decision: AnalystDecisionRequest,
         principal: PrincipalContext,
     ) -> IntelligenceEntity:
-        if "objects:review" not in principal.scopes:
-            raise PermissionError("objects:review scope is required")
+        if "entities:review" not in principal.scopes:
+            raise PermissionError("entities:review scope is required")
         if decision.decision == ReviewDecision.DRAFT:
             raise ValueError("Analyst decision must approve or reject the entity")
         with self._lock:
@@ -469,98 +462,6 @@ class IntelligenceRepository:
             self._entities[entity_id] = updated
             return updated.model_copy(deep=True)
 
-    def create_target_object(
-        self,
-        request: TargetObjectDraftRequest,
-        principal: PrincipalContext,
-    ) -> TargetObject:
-        if "objects:draft" not in principal.scopes:
-            raise PermissionError("objects:draft scope is required")
-        with self._lock:
-            entity = self._entities.get(request.entity_id)
-            if entity is None:
-                raise KeyError("Entity not found")
-            allowed_fields = self._target_schemas.allowed_fields(request.object_type)
-            requested = request.requested_fields or sorted(
-                allowed_fields & (set(entity.attributes) | {"name"})
-            )
-            unknown_fields = set(requested) - allowed_fields
-            if unknown_fields:
-                raise ValueError(
-                    f"Fields are not allowed by the target schema: "
-                    f"{', '.join(sorted(unknown_fields))}"
-                )
-            citations = list(
-                dict.fromkeys(
-                    item.citation_id
-                    for item in entity.provenance
-                    if item.citation_id in self._known_citation_ids
-                )
-            )
-            fields = [
-                TargetField(
-                    name=name,
-                    value=(
-                        entity.canonical_name if name == "name" else entity.attributes.get(name)
-                    ),
-                    citation_ids=citations,
-                    grounding_status=(
-                        GroundingStatus.VERIFIED if citations else GroundingStatus.UNVERIFIED
-                    ),
-                )
-                for name in requested
-            ]
-            target = TargetObject(
-                object_type=request.object_type,
-                entity_id=entity.entity_id,
-                fields=fields,
-                relationships=[
-                    self._relationships[relationship_id].model_copy(deep=True)
-                    for relationship_id in entity.relationship_ids
-                    if relationship_id in self._relationships
-                ],
-            )
-            self._objects[target.object_id] = target
-            return target.model_copy(deep=True)
-
-    def decide(
-        self,
-        object_id: str,
-        decision: AnalystDecisionRequest,
-        principal: PrincipalContext,
-    ) -> TargetObject:
-        if "objects:review" not in principal.scopes:
-            raise PermissionError("objects:review scope is required")
-        if decision.decision == ReviewDecision.DRAFT:
-            raise ValueError("Analyst decision must approve or reject the draft")
-        with self._lock:
-            target = self._objects.get(object_id)
-            if target is None:
-                raise KeyError("Target object not found")
-            if decision.decision == ReviewDecision.APPROVED and any(
-                field.grounding_status != GroundingStatus.VERIFIED for field in target.fields
-            ):
-                raise ValueError("Unsupported fields prevent approval")
-            updated = target.model_copy(
-                update={
-                    "status": decision.decision,
-                    "analyst": principal.subject,
-                    "review_note": decision.note,
-                    "updated_at": datetime.now(UTC),
-                }
-            )
-            self._objects[object_id] = updated
-            return updated.model_copy(deep=True)
-
-    def export(self, object_id: str) -> dict[str, Any]:
-        with self._lock:
-            target = self._objects.get(object_id)
-            if target is None:
-                raise KeyError("Target object not found")
-            if target.status != ReviewDecision.APPROVED:
-                raise PermissionError("Only approved target objects may be exported")
-            return JsonExportAdapter().publish(target)
-
     def register_evidence(self, evidence: Sequence[Evidence]) -> None:
         with self._lock:
             self._known_citation_ids.update(
@@ -575,7 +476,6 @@ class DynamoDBIntelligenceRepository(IntelligenceRepository):
         self,
         entity_table: str,
         change_table: str,
-        workflow_table: str,
         region: str,
         resource: Any | None = None,
     ) -> None:
@@ -586,21 +486,22 @@ class DynamoDBIntelligenceRepository(IntelligenceRepository):
             resource = boto3.resource("dynamodb", region_name=region)
         self._entity_table = resource.Table(entity_table)
         self._change_table = resource.Table(change_table)
-        self._workflow_table = resource.Table(workflow_table)
         self._hydrate()
 
     def _hydrate(self) -> None:
         for item in self._scan(self._entity_table):
-            entity = IntelligenceEntity.model_validate_json(item["payload"])
+            payload = item.get("payload")
+            if not isinstance(payload, str):
+                continue
+            entity = IntelligenceEntity.model_validate_json(payload)
             self._entities[entity.entity_id] = entity
             self._entity_keys[(entity.entity_type.casefold(), entity.normalized_name)] = (
                 entity.entity_id
             )
         for item in self._scan(self._change_table):
-            self._changes.append(ChangeEvent.model_validate_json(item["payload"]))
-        for item in self._scan(self._workflow_table):
-            target = TargetObject.model_validate_json(item["payload"])
-            self._objects[target.object_id] = target
+            payload = item.get("payload")
+            if isinstance(payload, str):
+                self._changes.append(ChangeEvent.model_validate_json(payload))
 
     @staticmethod
     def _scan(table: Any) -> list[dict[str, Any]]:
@@ -657,35 +558,6 @@ class DynamoDBIntelligenceRepository(IntelligenceRepository):
             }
         )
         return entity
-
-    def create_target_object(
-        self,
-        request: TargetObjectDraftRequest,
-        principal: PrincipalContext,
-    ) -> TargetObject:
-        target = super().create_target_object(request, principal)
-        self._put_target(target)
-        return target
-
-    def decide(
-        self,
-        object_id: str,
-        decision: AnalystDecisionRequest,
-        principal: PrincipalContext,
-    ) -> TargetObject:
-        target = super().decide(object_id, decision, principal)
-        self._put_target(target)
-        return target
-
-    def _put_target(self, target: TargetObject) -> None:
-        self._workflow_table.put_item(
-            Item={
-                "object_id": target.object_id,
-                "entity_id": target.entity_id,
-                "status": target.status.value,
-                "payload": target.model_dump_json(),
-            }
-        )
 
 
 def _normalize_name(value: str) -> str:

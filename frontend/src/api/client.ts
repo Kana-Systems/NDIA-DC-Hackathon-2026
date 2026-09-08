@@ -4,7 +4,7 @@ import type {
   AcquisitionMetadata, AnalysisResponse, ApiResult, ChangeEvent, DemoDocument,
   EntityCandidate, IngestionStatus, IntelligenceEntity, IntelligenceQuery,
   IntelligenceResponse, NativeReport, Relationship, RiskLevel, SourceRecord,
-  TargetObject, TargetObjectDraftRequest, TargetObjectExport, ReviewDecision,
+  ReviewDecision,
 } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -190,21 +190,5 @@ export const apiClient = {
     return request(`/api/v1/intelligence/entities/${encodeURIComponent(entityId)}/decision`, {
       method: 'POST', body: JSON.stringify({ decision, note }),
     }, true)
-  },
-  async createTargetObject(payload: TargetObjectDraftRequest): Promise<TargetObject> {
-    requireLiveIntelligence()
-    return request('/api/v1/intelligence/target-objects', {
-      method: 'POST', body: JSON.stringify(payload),
-    }, true)
-  },
-  async decideTargetObject(objectId: string, decision: Exclude<ReviewDecision, 'draft'>, note: string): Promise<TargetObject> {
-    requireLiveIntelligence()
-    return request(`/api/v1/intelligence/target-objects/${encodeURIComponent(objectId)}/decision`, {
-      method: 'POST', body: JSON.stringify({ decision, note }),
-    }, true)
-  },
-  async exportTargetObject(objectId: string): Promise<TargetObjectExport> {
-    requireLiveIntelligence()
-    return request(`/api/v1/intelligence/target-objects/${encodeURIComponent(objectId)}/export`, undefined, true)
   },
 }

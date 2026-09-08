@@ -11,8 +11,8 @@ from app.main import create_app
 def _test_client() -> TestClient:
     app = create_app(
         Settings(
-            gradio_username="reviewer",
-            gradio_password=SecretStr("test-password"),
+            workspace_username="reviewer",
+            workspace_password=SecretStr("test-password"),
             bedrock_enabled=False,
         )
     )
@@ -20,7 +20,8 @@ def _test_client() -> TestClient:
 
 
 def test_runtime_secrets_have_no_insecure_defaults(monkeypatch) -> None:
-    monkeypatch.delenv("GRADIO_PASSWORD")
+    monkeypatch.delenv("WORKSPACE_PASSWORD", raising=False)
+    monkeypatch.delenv("GRADIO_PASSWORD", raising=False)
     monkeypatch.delenv("DEMO_JWT_SECRET")
 
     with pytest.raises(ValidationError):
@@ -90,27 +91,27 @@ def test_review_parse_and_analysis_run_off_event_loop(monkeypatch) -> None:
     assert observed["off_loop"] is True
 
 
-def test_gradio_credentials_are_configured_and_secret_is_masked() -> None:
+def test_workspace_credentials_are_configured_and_secret_is_masked() -> None:
     settings = Settings(
-        gradio_username="alice",
-        gradio_password=SecretStr("super-secret"),
+        workspace_username="alice",
+        workspace_password=SecretStr("super-secret"),
         max_upload_mb=3,
     )
 
-    assert settings.gradio_username == "alice"
+    assert settings.workspace_username == "alice"
     assert settings.max_upload_bytes == 3 * 1024 * 1024
     assert settings.bedrock_model_id == "openai.gpt-5.6-terra"
     assert settings.classifier_enabled is True
     assert "super-secret" not in repr(settings)
 
 
-def test_ui_requires_authentication() -> None:
+def test_retired_ui_route_is_not_served() -> None:
     app = create_app(
         Settings(
-            gradio_username="reviewer",
-            gradio_password=SecretStr("test-password"),
+            workspace_username="reviewer",
+            workspace_password=SecretStr("test-password"),
         )
     )
     response = TestClient(app).get("/ui/")
 
-    assert "Government Contract Review" not in response.text
+    assert response.status_code == 404

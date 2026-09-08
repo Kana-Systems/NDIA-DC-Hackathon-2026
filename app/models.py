@@ -235,32 +235,6 @@ class Relationship(BaseModel):
     grounding_status: GroundingStatus = GroundingStatus.UNVERIFIED
 
 
-class TargetField(BaseModel):
-    name: str
-    value: str | int | float | bool | None = None
-    citation_ids: list[str] = Field(default_factory=list)
-    grounding_status: GroundingStatus = GroundingStatus.UNVERIFIED
-
-
-class TargetObjectDraftRequest(BaseModel):
-    object_type: str = Field(min_length=1, max_length=100)
-    entity_id: str
-    requested_fields: list[str] = Field(default_factory=list, max_length=100)
-
-
-class TargetObject(BaseModel):
-    object_id: str = Field(default_factory=lambda: str(uuid4()))
-    object_type: str
-    entity_id: str
-    fields: list[TargetField]
-    relationships: list[Relationship] = Field(default_factory=list)
-    status: ReviewDecision = ReviewDecision.DRAFT
-    analyst: str | None = None
-    review_note: str = ""
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
 class AnalystDecisionRequest(BaseModel):
     decision: ReviewDecision
     note: str = Field(default="", max_length=2_000)

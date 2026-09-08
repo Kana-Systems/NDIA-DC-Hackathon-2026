@@ -9,9 +9,10 @@ Read [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) for decisions and progress.
 The model workflow is document upload/paste → trained clause classifier →
 Terra-guided search of ingested FAR/DFARS passages → Terra risk review →
 citation/location validation → finding cards, clause inventory, and evidence graph.
-Model mode reports an error if a required model or service fails; it does not
-silently substitute the deterministic demo. `GET /health` only checks the web
-service; it does not prove Bedrock or model readiness.
+Model mode reports an error if a required service fails; it does not silently
+substitute the deterministic demo. Container startup verifies and loads the
+packaged model and corpus before the task can become healthy. `GET /health`
+does not make a billable Bedrock call.
 
 ```bash
 git lfs install
@@ -32,9 +33,9 @@ may contain LFS pointers instead of the actual files, so prefer cloning with LFS
 See [SHARED_ARTIFACTS.md](SHARED_ARTIFACTS.md) for verification and limitations.
 
 Open **http://127.0.0.1:8080/lens/**. Local password: `contract-demo`, unless
-overridden using `GRADIO_PASSWORD`. The advanced Gradio interface remains at
-`/ui/` (username `judge`). The React workflow accepts pasted text and PDF/DOCX
-uploads, collects acquisition metadata, and displays actual model identifiers.
+overridden using `WORKSPACE_PASSWORD`. The React workflow accepts pasted text and
+PDF/DOCX uploads, collects acquisition metadata, and displays actual model
+identifiers. It is the only interactive UI.
 The current model review limit is 30,000 extracted characters per request; larger
 documents require splitting. Upload parsing also enforces archive, page, and size
 limits. On macOS the Linux address-space limit is unavailable; subprocess timeout
@@ -86,7 +87,7 @@ deployment.
 ```mermaid
 flowchart LR
   Judge[Judge browser] -->|HTTPS| ALB[Application Load Balancer]
-  ALB --> ECS[ECS Fargate\nFastAPI + Gradio]
+  ALB --> ECS[ECS Fargate\nFastAPI + React Lens]
   ECS --> S3[(Encrypted S3\nuploads + artifacts)]
   ECS --> OS[(Private OpenSearch\nBM25 + vectors)]
   ECS --> BR[Bedrock\nGPT-5.6 Terra]
@@ -108,17 +109,16 @@ Terraform deploys into `us-gov-west-1` in the `aws-us-gov` partition:
   Container Insights, and CPU target tracking;
 - an HTTPS ALB using an issued ACM certificate for an externally managed DNS
   hostname. Squarespace supplies the validation and application CNAME records.
-  The ALB forwards `/`, `/ui`, `/ui/*`, `/api/*`, and
-  `/health`; `/docs` and `/openapi.json` remain unexposed. Gradio enforces the
-  shared judge credential under `/ui`, and the programmatic `/api/*` routes
-  enforce constant-time HTTP Basic credential verification;
+  The ALB forwards `/`, `/lens`, `/lens/*`, `/api/*`, and `/health`;
+  `/ui`, `/docs`, and `/openapi.json` remain unexposed. Lens obtains a
+  short-lived bearer token after constant-time password verification;
 - private, encrypted single-node OpenSearch 2.15 for demo-scale hybrid retrieval,
   using separate contract-policy and security-domain enterprise indexes;
 - separate encrypted, private S3 buckets. Uploads expire after seven days;
   versioned artifact and J2 source-object noncurrent versions expire after 30
   days;
 - a customer-managed J2 KMS key, encrypted SQS queue and dead-letter queue, and
-  DynamoDB registries for documents, entities, changes, and reviewed workflows;
+  DynamoDB registries for documents, entities, and changes;
 - a digest-pinned fixture-ingestion task and, when a Graph secret container is
   explicitly enabled, a scheduled sovereign Microsoft Graph delta task;
 - generated judge credentials in Secrets Manager, least-privilege ECS task and
@@ -131,16 +131,13 @@ resource descriptions, log stream names, or other resource metadata.
 ## Joint Staff J2 intelligence expansion
 
 Contract review remains the primary workflow. The same retrieval, authorization,
-provenance, and citation boundary also supports three reusable mission workflows:
+provenance, and citation boundary also supports two reusable mission workflows:
 
 - **Retrieval-Augmented Generation Intelligence Service** — authenticated
   question answering, summaries, and analyst-review drafts over approved sources.
 - **Automated Foundational Data Ingestion** — versioned connector ingestion,
   deterministic chunking, entity resolution, relationship mapping, change
   detection, provenance, and quality-control status.
-- **Target System Object Development** — cited field suggestions and
-  relationships staged as draft objects. Only an analyst-approved object can
-  reach the JSON export adapter, and that adapter performs no external write.
 
 The deployed fixture worker automatically generates and ingests 120 synthetic
 public/shared-drive documents into versioned S3 objects, DynamoDB manifests and
@@ -159,9 +156,8 @@ tokens exercise user/group claims. Production deployments must switch to the
 OIDC adapter and an approved identity provider.
 
 Foundational entity matches are deterministic candidates, not intelligence
-conclusions. Changes, generated fields, relationships, summaries, and drafts
-must retain citations or are marked unsupported. Analyst approval is always
-required before export.
+conclusions. Changes, relationships, summaries, and drafts must retain citations
+or are marked unsupported. Analyst review remains required.
 
 ### J2 API examples
 
@@ -171,7 +167,7 @@ Obtain a 30-minute demo token (local/public synthetic demonstrations only):
 TOKEN="$(
   curl --fail --silent \
     -F username=judge \
-    -F password="$GRADIO_PASSWORD" \
+    -F password="$WORKSPACE_PASSWORD" \
     http://127.0.0.1:8080/api/v1/auth/demo-token |
   python -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
 )"
@@ -187,14 +183,14 @@ curl --fail \
   http://127.0.0.1:8080/api/v1/intelligence/query
 ```
 
-Entity, change, relationship, target-object, decision, and approved JSON export
-operations are available below `/api/v1/intelligence/`. API responses never
-authorize a citation merely because a model emitted its ID.
+Entity, change, relationship, and decision operations are available below
+`/api/v1/intelligence/`. API responses never authorize a citation merely because
+a model emitted its ID.
 
 ### Security-domain deployment
 
 `security_domain` namespaces the enterprise index, connector queue, registries,
-workflow records, and encryption resources. Deploy each domain from a separate
+change records, and encryption resources. Deploy each domain from a separate
 AWS account and Terraform state key. The repository deploys only `demo`; it does
 not create cross-domain links, replication, or accreditation. Public/synthetic
 data restrictions remain in force.
@@ -235,15 +231,17 @@ application requirements are present:
 python -m venv .venv
 source .venv/bin/activate                 # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+npm --prefix frontend ci
+npm --prefix frontend run build
 # Optionally copy .env.example to .env and replace every placeholder.
-export GRADIO_USERNAME=judge
-export GRADIO_PASSWORD='replace-with-a-local-secret'
+export WORKSPACE_USERNAME=judge
+export WORKSPACE_PASSWORD='replace-with-a-local-secret'
 export DEMO_JWT_SECRET='replace-with-a-separate-random-signing-secret'
 export BEDROCK_ENABLED=false
 uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
-Open `http://127.0.0.1:8080/ui/`; `GET /health` is unauthenticated for health
+Open `http://127.0.0.1:8080/lens/`; `GET /health` is unauthenticated for health
 checks. With Bedrock disabled, the deterministic local adapters support the
 sample workflow without AWS credentials. To test Terra, use short-lived
 GovCloud credentials, set `BEDROCK_ENABLED=true`,
@@ -259,10 +257,11 @@ review inputs only; do not place their values in AWS resource metadata.
 Container run:
 
 ```bash
+git lfs pull
 docker build -t contract-review:local .
 docker run --rm -p 8080:8080 \
-  -e GRADIO_USERNAME=judge \
-  -e GRADIO_PASSWORD='replace-with-a-local-secret' \
+  -e WORKSPACE_USERNAME=judge \
+  -e WORKSPACE_PASSWORD='replace-with-a-local-secret' \
   -e DEMO_JWT_SECRET='replace-with-a-separate-random-signing-secret' \
   -e BEDROCK_ENABLED=false \
   contract-review:local \
@@ -277,7 +276,7 @@ AWS credentials, or Terraform variable/state files.
 The deployed ALB exposes `/api/*` because those routes apply the same generated
 judge username/password with constant-time HTTP Basic verification. Health
 checks remain intentionally unauthenticated; interactive UI requests remain
-under `/ui/*`; generated OpenAPI and Swagger routes are not exposed.
+under `/lens/*`; generated OpenAPI and Swagger routes are not exposed.
 
 ```bash
 curl --fail --user 'judge:RETRIEVED_SECRET' \
@@ -333,9 +332,8 @@ The deployed task sets `OPENSEARCH_ENABLED=true`,
 `EMBEDDING_DIMENSIONS=1024`. The current application settings consume the
 equivalent `OPENSEARCH_VECTOR_ENABLED=true` and
 `TITAN_EMBEDDING_MODEL_ID=amazon.titan-embed-text-v2:0` aliases; Terraform sets
-both naming forms explicitly. It also sets `GRADIO_TEMP_DIR=/tmp/gradio` and
-`HOME=/tmp/home` on a writable ephemeral `/tmp` volume; the remainder of the
-container filesystem is read-only.
+both naming forms explicitly. It sets `HOME=/tmp/home` on a writable ephemeral
+`/tmp` volume; the remainder of the container filesystem is read-only.
 
 ## ML training
 
@@ -394,18 +392,18 @@ Monitor with `aws sagemaker list-training-jobs` and
 Record label metrics, source commit/digest, base model, parameters, and known
 failure modes with each artifact.
 
-ECS sets `CLASSIFIER_ENABLED=true`; the packaged adapter combines classifier
-output with transparent keyword coverage and fails back to the deterministic
-heuristic when no deployable artifact is present. The imported Legal-BERT
-snapshot is retained through Git LFS for repeatable local evaluation, but
-`MODEL_REVIEW_ENABLED` remains false in the GovCloud deployment until its
-federal benefit gate passes and a reviewed inference image explicitly packages
-the model, tokenizer, provenance, and compatible CPU inference dependencies.
-Do not silently promote a SageMaker output into the application.
+The GovCloud image packages the reviewed Legal-BERT snapshot, tokenizer,
+provenance, CPU inference dependencies, and versioned FAR/DFARS corpus from Git
+LFS. ECS sets `MODEL_REVIEW_ENABLED=true` and loads those artifacts before the
+task becomes healthy. Contract findings still combine learned clause candidates
+with deterministic keyword coverage, governed rules, retrieved authority, and
+Terra synthesis; classifier labels alone never establish applicability. Missing
+or invalid artifacts fail deployment rather than silently selecting the
+heuristic. Do not automatically promote a SageMaker output into the application.
 
 Terraform intentionally does not provision a continuously running SageMaker
 endpoint. SageMaker is used only for an explicitly submitted, one-off training
-job; low-volume demo inference can load a separately approved packaged artifact
+job; low-volume demo inference runs the separately approved packaged artifact
 inside Fargate.
 For the judging ablation, compare `CLASSIFIER_ENABLED=false` (rules/RAG plus
 keyword baseline) with `CLASSIFIER_ENABLED=true` (packaged classifier plus the
@@ -605,7 +603,7 @@ documents.
 - TLS and encryption at rest reduce exposure but do not constitute an ATO,
   FedRAMP authorization, records schedule, legal hold process, DLP program, or
   incident-response capability.
-- Gradio shared credentials are demo authentication, not user identity,
+- Shared Lens credentials are demo authentication, not user identity,
   authorization, audit attribution, MFA, or lifecycle management.
 - Terraform deliberately has no default HTTPS ingress CIDR. Explicitly provide
   reviewed VPN or judge egress ranges; using `0.0.0.0/0` exposes the demo to the

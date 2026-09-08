@@ -212,7 +212,7 @@ def main():
         raise ValueError("This approved run is bounded to six unique cases")
     candidate = json.loads(args.candidate.read_text())
     settings = Settings(
-        gradio_password="evaluation-only-password",
+        workspace_password="evaluation-only-password",
         demo_jwt_secret="evaluation-only-secret-at-least-32-characters",
         bedrock_enabled=True,
         bedrock_timeout_seconds=120,

@@ -15,9 +15,11 @@ from app.sample import sample_contract_bytes, sample_metadata  # noqa: E402
 
 def main():
     settings = Settings(
-        gradio_password="local-smoke-password",
+        workspace_password="local-smoke-password",
         demo_jwt_secret="local-smoke-signing-secret-32-characters",
-        bedrock_enabled=True, model_review_enabled=True, bedrock_timeout_seconds=120,
+        bedrock_enabled=True,
+        model_review_enabled=True,
+        bedrock_timeout_seconds=120,
         classifier_model_dir=os.getenv("CLASSIFIER_MODEL_DIR", "artifacts/models/legal-bert-cuad"),
         local_corpus_path=os.getenv("LOCAL_CORPUS_PATH", "artifacts/knowledge/federal-v2.sqlite"),
     )
@@ -25,11 +27,19 @@ def main():
     report = ModelReviewService(settings).review(document, sample_metadata())
     output = Path("artifacts/model-review-smoke.json")
     output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-    print(json.dumps({
-        "mode": report.synthesis_mode, "classifiers": report.classifier_model_ids,
-        "findings": len(report.findings), "evidence": len(report.evidence),
-        "corpus": report.corpus_manifest, "report": str(output),
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "mode": report.synthesis_mode,
+                "classifiers": report.classifier_model_ids,
+                "findings": len(report.findings),
+                "evidence": len(report.evidence),
+                "corpus": report.corpus_manifest,
+                "report": str(output),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

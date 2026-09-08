@@ -12,7 +12,13 @@ frontend/dist
 ml/data
 ml/output
 ml/artifacts
-artifacts
+artifacts/**
+!artifacts/models/
+!artifacts/models/selected.json
+!artifacts/models/legal-bert-cuad/
+!artifacts/models/legal-bert-cuad/**
+!artifacts/knowledge/
+!artifacts/knowledge/federal-v2.sqlite
 reports
 uploads
 .env*

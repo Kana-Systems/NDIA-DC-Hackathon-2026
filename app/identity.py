@@ -25,11 +25,11 @@ def issue_demo_token(
         raise HTTPException(status_code=404, detail="Demo identity is disabled")
     valid_username = secrets.compare_digest(
         username.encode(),
-        settings.gradio_username.encode(),
+        settings.workspace_username.encode(),
     )
     valid_password = secrets.compare_digest(
         password.encode(),
-        settings.gradio_password.get_secret_value().encode(),
+        settings.workspace_password.get_secret_value().encode(),
     )
     if not (valid_username and valid_password):
         raise HTTPException(
@@ -45,7 +45,7 @@ def issue_demo_token(
         "exp": int((now + timedelta(minutes=30)).timestamp()),
         "groups": ["contract-reviewers", "mission-analysts"],
         "security_domain": settings.security_domain,
-        "scope": "rag:query entities:read objects:draft objects:review",
+        "scope": "rag:query entities:read entities:review",
     }
     return jwt.encode(
         payload,

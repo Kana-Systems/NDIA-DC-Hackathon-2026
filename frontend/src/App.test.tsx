@@ -16,6 +16,14 @@ const analysisPayload = {
     citations: [{ title: 'DFARS', url: 'https://www.acquisition.gov/dfars', section: 'Part 227', verification_status: 'official_source_applicability_unverified' }],
   }],
   graph: { nodes: [], edges: [] },
+  report: {
+    report_id: 'report-1',
+    synthesis_mode: 'deterministic-demo-v1',
+    classifier_model_ids: ['deterministic-keyword-v1'],
+    clause_status_inventory: [],
+    corpus_manifest: {},
+    knowledge_graph: {},
+  },
 }
 
 const backendSample = {
@@ -46,6 +54,9 @@ describe('Acquisition Lens workflow', () => {
     await user.type(screen.getByLabelText(/workspace password/i), 'safe-password')
     await user.click(screen.getByRole('button', { name: /enter workspace/i }))
     expect(await screen.findByRole('heading', { name: /find the clause/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /legal contract review/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /governed rag intelligence/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /foundational intelligence/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /load judge-ready sample/i }))
     expect(await screen.findByDisplayValue(backendSample.title)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /analyze contract/i }))
@@ -152,8 +163,7 @@ describe('Acquisition Lens workflow', () => {
     expect(await screen.findByText('7')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /^foundations$/i }))
     expect(screen.getByRole('heading', { name: /resolve entities and review change/i })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /target objects/i }))
-    expect(screen.getByRole('heading', { name: /draft, decide, then export/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /target objects/i })).not.toBeInTheDocument()
 
     const queryCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/api/v1/intelligence/query'))
     expect((queryCall?.[1]?.headers as Record<string, string>).Authorization).toBe('Bearer j2-token')

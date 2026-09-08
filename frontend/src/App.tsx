@@ -11,10 +11,9 @@ import { emptyMetadata } from './types'
 import { EvidenceGraph } from './EvidenceGraph'
 import {
   FoundationsWorkspace, IngestionWorkspace, IntelligenceQueryWorkspace,
-  TargetObjectsWorkspace,
 } from './IntelligenceWorkspaces'
 
-type View = 'review' | 'query' | 'ingestion' | 'foundations' | 'targets' | 'sources'
+type View = 'review' | 'query' | 'ingestion' | 'foundations' | 'sources'
 
 const riskLabel: Record<RiskLevel, string> = {
   critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Informational',
@@ -86,7 +85,6 @@ function Header({ active, onNavigate }: { active: View; onNavigate: (view: View)
     { view: 'query', label: 'Cited intelligence' },
     { view: 'ingestion', label: 'Ingestion' },
     { view: 'foundations', label: 'Foundations' },
-    { view: 'targets', label: 'Target objects' },
     { view: 'sources', label: 'Source library' },
   ]
   return (
@@ -138,6 +136,13 @@ function Results({ analysis, onReset }: { analysis: AnalysisResponse; onReset: (
   const titleRef = useRef<HTMLHeadingElement>(null)
   useEffect(() => { titleRef.current?.focus() }, [])
   const counts = analysis.findings.reduce<Record<string, number>>((all, finding) => ({ ...all, [finding.risk]: (all[finding.risk] ?? 0) + 1 }), {})
+  const manifest = analysis.report?.corpus_manifest
+  const corpusSummary = manifest
+    && typeof manifest.documents === 'number'
+    && typeof manifest.chunks === 'number'
+    && typeof manifest.links === 'number'
+    ? { documents: manifest.documents, chunks: manifest.chunks, links: manifest.links, retrievedAt: manifest.retrieved_at }
+    : null
   return (
     <>
       <div className="results-heading">
@@ -155,7 +160,7 @@ function Results({ analysis, onReset }: { analysis: AnalysisResponse; onReset: (
         <p>Explanation mode: <strong>{analysis.report.synthesis_mode}</strong></p>
         <p>Classifiers: {analysis.report.classifier_model_ids.join(', ') || 'Not reported'}. Heuristic and keyword identifiers indicate rule-based processing.</p>
         <p>No overall legal-confidence score is calculated. Clause detection and applicability require separate review.</p>
-        {analysis.report.corpus_manifest && <p>Indexed corpus: {analysis.report.corpus_manifest.documents.toLocaleString()} source documents, {analysis.report.corpus_manifest.chunks.toLocaleString()} passages, and {analysis.report.corpus_manifest.links.toLocaleString()} source references. Ingested {analysis.report.corpus_manifest.retrieved_at}.</p>}
+        {corpusSummary && <p>Indexed corpus: {corpusSummary.documents.toLocaleString()} source documents, {corpusSummary.chunks.toLocaleString()} passages, and {corpusSummary.links.toLocaleString()} source references.{corpusSummary.retrievedAt ? ` Ingested ${corpusSummary.retrievedAt}.` : ''}</p>}
         <details><summary>Inspect {analysis.report.clause_status_inventory.length} clause statuses</summary>
           {analysis.report.clause_status_inventory.map((clause, index) => <article key={`${clause.clause_id}-${index}`}><h3>{clause.clause_id} — {clause.title}</h3><p><strong>{clause.status}</strong>: {clause.rationale}</p></article>)}
         </details>
@@ -210,6 +215,11 @@ function ReviewWorkspace({ onAnalyze, onLoadSample }: { onAnalyze: (title: strin
       <section className="workspace-hero">
         <div><div className="eyebrow"><Sparkles size={15} /> Source-grounded analysis</div><h1>Find the clause that changes the deal.</h1><p>Paste federal contract language. Acquisition Lens maps obligations to authoritative sources, prioritizes risk, and gives your team a clear review path.</p></div>
         <div className="trust-stat"><strong>4</strong><span>review dimensions</span><small>risk · authority · confidence · action</small></div>
+      </section>
+      <section className="mission-coverage" aria-label="Supported use cases">
+        <article><span>01</span><h2>Legal contract review</h2><p>Legal-BERT identifies clause candidates while governed rules and FAR/DFARS evidence drive missing-language and risk recommendations.</p></article>
+        <article><span>02</span><h2>Governed RAG intelligence</h2><p>Natural-language answers, summaries, and analyst drafts retain source citations, grounding status, and access-control boundaries.</p></article>
+        <article><span>03</span><h2>Foundational intelligence</h2><p>Versioned ingestion, entity resolution, change detection, provenance, and analyst quality control support reference-product maintenance.</p></article>
       </section>
       <section className="review-card" aria-labelledby="review-title">
         <div className="review-card-header"><div><p className="kicker">New analysis</p><h2 id="review-title">Review contract language</h2></div><button className="sample-button" onClick={() => void loadSample()} disabled={samplePending}>{samplePending ? <><LoaderCircle className="spin" size={15} /> Loading sample…</> : <><Sparkles size={15} /> Load judge-ready sample</>}</button></div>
@@ -302,7 +312,6 @@ export default function App() {
         {view === 'query' && <IntelligenceQueryWorkspace offline={demoMode} />}
         {view === 'ingestion' && <IngestionWorkspace offline={demoMode} />}
         {view === 'foundations' && <FoundationsWorkspace offline={demoMode} />}
-        {view === 'targets' && <TargetObjectsWorkspace offline={demoMode} />}
         {view === 'sources' && <SourceLibrary sources={sources} loading={sourcesLoading} error={sourcesError} onRetry={loadSources} />}
       </main>
       <footer className="legal-footer"><div><TriangleAlert size={18} /><p><strong>Human review required.</strong> Acquisition Lens supports issue spotting and research. It is not legal advice and does not determine clause applicability, compliance, or contract acceptability.</p></div><span>Acquisition Lens · Local hackathon demonstration</span></footer>
