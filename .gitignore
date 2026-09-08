@@ -50,6 +50,8 @@ infra/terraform/terraform.tfvars
 terraform.rc
 
 # Editors and operating systems
+node_modules/
+*.tsbuildinfo
 .vscode/
 .idea/
 .DS_Store

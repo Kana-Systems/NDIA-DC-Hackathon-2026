@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import inspect
 import json
 import os
@@ -53,7 +54,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=2e-5)
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--positive-weight-cap", type=float, default=1.0)
+    parser.add_argument("--resume-from-checkpoint", default=None)
+    parser.add_argument("--revision", default=None)
     return parser
+
+
+def positive_weights(items: list[dict], labels: list[str], cap: float) -> list[float]:
+    """Smoothed square-root imbalance weights; training examples only."""
+    if not 1 <= cap <= 20:
+        raise ValueError("positive-weight-cap must be between 1 and 20")
+    counts = {label: sum(label in item["labels"] for item in items) for label in labels}
+    return [
+        min(cap, max(1.0, ((len(items) - counts[label]) / max(1, counts[label])) ** 0.5))
+        for label in labels
+    ]
 
 
 def load_window_config(training_dir: Path) -> dict[str, Any]:
@@ -167,7 +182,31 @@ def package_artifacts(
         "metrics_file": "evaluation_metrics.json",
         "windowing": window_config,
         "tokenizer_max_length": args.max_length,
+        "training_options": {
+            "seed": args.seed,
+            "epochs": args.epochs,
+            "learning_rate": args.learning_rate,
+            "positive_weight_cap": getattr(args, "positive_weight_cap", 1.0),
+            "resume_from_checkpoint": getattr(args, "resume_from_checkpoint", None),
+        },
     }
+    training_dir = getattr(args, "training_dir", None)
+    if training_dir:
+        hashes = {
+            name: hashlib.sha256((Path(training_dir) / f"{name}.jsonl").read_bytes()).hexdigest()
+            for name in ("train", "validation", "test")
+            if (Path(training_dir) / f"{name}.jsonl").is_file()
+        }
+        provenance["split_sha256"] = hashes
+        provenance["model_id"] = f"legal-encoder-cuad-{hashes.get('train', 'unknown')[:12]}"
+    weights_path = model_dir / "model.safetensors"
+    if weights_path.is_file():
+        provenance["weights_sha256"] = hashlib.sha256(weights_path.read_bytes()).hexdigest()
+        provenance["model_id"] = f"legal-encoder-cuad-{provenance['weights_sha256'][:12]}"
+    config_path = model_dir / "config.json"
+    if config_path.is_file():
+        provenance["base_revision"] = json.loads(config_path.read_text()).get("_commit_hash")
+    provenance["requested_revision"] = getattr(args, "revision", None)
     model_dir.mkdir(parents=True, exist_ok=True)
     (model_dir / "label_mapping.json").write_text(
         json.dumps(mapping, indent=2, sort_keys=True) + "\n",
@@ -187,6 +226,9 @@ def package_artifacts(
     )
     shutil.copyfile(DOMAIN_MAPPING, model_dir / DOMAIN_MAPPING.name)
     shutil.copyfile(MODULE_DIR / "CUAD_ATTRIBUTION.md", model_dir / "CUAD_ATTRIBUTION.md")
+    shutil.copyfile(
+        MODULE_DIR / "PRETRAINED_ATTRIBUTION.md", model_dir / "PRETRAINED_ATTRIBUTION.md"
+    )
     code_dir = model_dir / "code"
     code_dir.mkdir(exist_ok=True)
     for filename in ("inference.py", "heuristic.py", "windowing.py"):
@@ -209,13 +251,16 @@ def main() -> None:
             AutoTokenizer,
             DataCollatorWithPadding,
             Trainer,
+            TrainerCallback,
             TrainingArguments,
+            set_seed,
         )
     except ImportError as error:
         raise SystemExit("training requires packages from ml/requirements-training.txt") from error
 
+    set_seed(args.seed)
     label_to_id = {label: index for index, label in enumerate(labels)}
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, revision=args.revision)
 
     class ContractDataset(Dataset):
         def __init__(self, items: list[dict[str, Any]]) -> None:
@@ -264,6 +309,7 @@ def main() -> None:
     )
     model = AutoModelForSequenceClassification.from_pretrained(
         args.model_name,
+        revision=args.revision,
         num_labels=len(labels),
         id2label={index: label for label, index in label_to_id.items()},
         label2id=label_to_id,
@@ -271,15 +317,51 @@ def main() -> None:
     )
     apply_window_config(model.config, window_config, args.max_length)
     training_arguments = TrainingArguments(**training_api_kwargs(TrainingArguments, args))
-    trainer = Trainer(
+    weights = positive_weights(train_items, labels, args.positive_weight_cap)
+
+    class WeightedTrainer(Trainer):
+        def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+            import torch
+
+            targets = inputs.pop("labels")
+            outputs = model(**inputs)
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                outputs.logits,
+                targets.to(outputs.logits.dtype),
+                pos_weight=torch.tensor(
+                    weights, device=outputs.logits.device, dtype=outputs.logits.dtype
+                ),
+            )
+            return (loss, outputs) if return_outputs else loss
+
+    class Progress(TrainerCallback):
+        def on_step_end(self, args_, state, control, **kwargs):
+            if state.global_step % 50 == 0 or state.global_step == state.max_steps:
+                path = args.checkpoint_dir / "progress.json"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temp = path.with_suffix(".pending.json")
+                temp.write_text(
+                    json.dumps(
+                        {"step": state.global_step, "total": state.max_steps, "epoch": state.epoch}
+                    )
+                )
+                temp.replace(path)
+
+    trainer_type = (
+        WeightedTrainer
+        if args.positive_weight_cap > 1 and args.problem_type == "multi_label"
+        else Trainer
+    )
+    trainer = trainer_type(
         model=model,
         args=training_arguments,
         train_dataset=ContractDataset(train_items),
         eval_dataset=ContractDataset(validation_items),
         data_collator=DataCollatorWithPadding(tokenizer),
         compute_metrics=compute_metrics,
+        callbacks=[Progress()],
     )
-    trainer.train()
+    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     metrics = trainer.evaluate()
     trainer.save_model(str(args.model_dir))
     tokenizer.save_pretrained(str(args.model_dir))

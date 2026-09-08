@@ -1,5 +1,58 @@
 # Government Contract Review Demo
 
+## Combined Acquisition Lens application
+
+The `integration/acquisition-lens` branch combines the React judge interface
+with this repository's parsing, identity, ingestion, and model infrastructure.
+Read [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) for decisions and progress.
+
+The model workflow is document upload/paste → trained clause classifier →
+Terra-guided search of ingested FAR/DFARS passages → Terra risk review →
+citation/location validation → finding cards, clause inventory, and evidence graph.
+Model mode reports an error if a required model or service fails; it does not
+silently substitute the deterministic demo. `GET /health` only checks the web
+service; it does not prove Bedrock or model readiness.
+
+```bash
+bash scripts/setup-local.sh
+bash scripts/run-local.sh
+```
+
+Open **http://127.0.0.1:8080/lens/**. Local password: `contract-demo`, unless
+overridden using `GRADIO_PASSWORD`. The advanced Gradio interface remains at
+`/ui/` (username `judge`). The React workflow accepts pasted text and PDF/DOCX
+uploads, collects acquisition metadata, and displays actual model identifiers.
+The current model review limit is 30,000 extracted characters per request; larger
+documents require splitting. Upload parsing also enforces archive, page, and size
+limits. On macOS the Linux address-space limit is unavailable; subprocess timeout
+and explicit document bounds remain active.
+
+The run script enables live **GPT-5.6 Terra through AWS Bedrock** by default and
+uses the existing AWS credential chain. Inference is billable and sends supplied
+document text and retrieved evidence to Bedrock. Use public or synthetic documents
+for this prototype. To explicitly run the legacy offline engine, set both
+`MODEL_REVIEW_ENABLED=false BEDROCK_ENABLED=false` when launching.
+
+Local generated artifacts are excluded from Git:
+
+- `artifacts/knowledge/federal.sqlite`: official source snapshots indexed for
+  full-text retrieval, with commit versions, content hashes and reference links.
+- `artifacts/models/`: trained weights, attribution, split provenance and measured
+  evaluation results. `selected.json`, when present, selects the validated model.
+- `ml/data/`: downloaded CUAD and document-disjoint training/validation/test data.
+
+Rebuild source data with official GSA FAR/DFARS clones under
+`artifacts/sources/far` and `artifacts/sources/dfars`, then run
+`python -m knowledge.build_local`. A catalog entry is not an ingested source.
+This local corpus currently covers those GSA DITA snapshots; other sources in the
+20-entry catalog remain research/ingestion candidates.
+
+Model commands and licenses: [ml/README.md](ml/README.md),
+[CUAD attribution](ml/CUAD_ATTRIBUTION.md), and
+[pretrained-model attribution](ml/PRETRAINED_ATTRIBUTION.md).
+Run `bash scripts/check-local.sh` for regression checks. A live synthetic review
+is available via `.venv/bin/python scripts/verify-model-review.py`.
+
 An explainable pre-review assistant for public or synthetic government contract
 documents. It identifies likely clauses, applies deterministic acquisition
 rules, retrieves supporting policy passages, and uses GPT-5.6 Terra in Amazon

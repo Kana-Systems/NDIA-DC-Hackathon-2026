@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import tempfile
 import zipfile
+from copy import deepcopy
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -35,13 +36,47 @@ def parse_topic(
 
     root = ElementTree.parse(path).getroot()
     topic = (
-        root if _tag(root) in {"topic", "concept", "reference", "task"} else _first(root, "topic")
+        root
+        if _tag(root) in {"topic", "concept", "reference", "task"}
+        else next(
+            (
+                element
+                for element in root.iter()
+                if _tag(element) in {"topic", "concept", "reference", "task"}
+            ),
+            None,
+        )
     )
     if topic is None:
         return []
     topic_id = topic.get("id") or path.stem
     topic_title = _text(_first(topic, "title")) or topic_id
     sections = [element for element in topic.iter() if _tag(element) in {"section", "refbody"}]
+    # FAR conbody often mixes the main clause's p/ol children with Alternate
+    # sections. Selecting only sections silently discarded the main clause.
+    if sections:
+        body = next(
+            (
+                element
+                for element in topic.iter()
+                if _tag(element) in {"body", "conbody", "taskbody"}
+            ),
+            None,
+        )
+        if body is not None:
+            remainder = deepcopy(body)
+
+            def remove_sections(element):
+                for child in list(element):
+                    if _tag(child) in {"section", "refbody"}:
+                        element.remove(child)
+                    else:
+                        remove_sections(child)
+
+            remove_sections(remainder)
+            if _text(remainder):
+                remainder.set("id", f"{topic_id}-main")
+                sections.insert(0, remainder)
     if not sections:
         body = next(
             (

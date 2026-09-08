@@ -6,6 +6,7 @@ import hashlib
 import io
 import multiprocessing
 import re
+import sys
 import zipfile
 from collections.abc import Callable
 from contextlib import suppress
@@ -21,7 +22,9 @@ from app.models import DocumentLocation, ExtractedSegment, ParsedDocument
 
 
 def _apply_address_space_limit(memory_limit_mb: int) -> None:
-    if __import__("os").name != "posix":
+    # macOS does not support lowering RLIMIT_AS reliably. The subprocess timeout
+    # and explicit archive/page/text bounds remain active; Linux enforces memory.
+    if __import__("os").name != "posix" or sys.platform == "darwin":
         return
     import resource
 
