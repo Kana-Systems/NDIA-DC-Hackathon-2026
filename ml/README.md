@@ -42,12 +42,19 @@ state out of the final SageMaker model archive.
 
 ## SageMaker
 
-`configs/sagemaker.yaml` defines a single-GPU Hugging Face job. Upload the three
-processed files to one S3 prefix, install `requirements-sagemaker.txt`, and run:
+`configs/sagemaker.yaml` defines a tagged single-GPU `ml.g6.xlarge` Hugging Face
+job for GovCloud. Terraform provisions its encrypted bucket, execution role, and
+an optional submitter policy. From the repository root, install
+`requirements-sagemaker.txt`, set the Terraform output values, and run:
 
-`python -m ml.launch_sagemaker --role-arn ARN --training-s3-uri s3://...`
+```bash
+export SAGEMAKER_TRAINING_BUCKET=BUCKET
+export SAGEMAKER_ROLE_ARN=ARN
+./scripts/train-sagemaker.sh
+```
 
-The launcher is dry-run by default. Add `--submit` to create a billable job.
+The script validates and uploads the processed files. It is dry-run by default;
+add `--submit` to create a billable job.
 SageMaker supplies the training channel and model output paths through
 `SM_CHANNEL_TRAINING` and `SM_MODEL_DIR`. The launcher resolves `source_dir`
 from its own location, so invocation does not depend on the current directory.

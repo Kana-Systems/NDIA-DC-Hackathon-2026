@@ -142,3 +142,28 @@ output "ndia_resource_group_arn" {
   description = "ARN of the tag-based AWS Resource Group for this deployment."
   value       = aws_resourcegroups_group.ndia.arn
 }
+
+output "sagemaker_training_bucket_name" {
+  description = "Encrypted bucket for SageMaker training inputs, outputs, and checkpoints."
+  value       = aws_s3_bucket.sagemaker_training.id
+}
+
+output "sagemaker_training_input_uri" {
+  description = "S3 URI where processed classifier training files are uploaded."
+  value       = "s3://${aws_s3_bucket.sagemaker_training.id}/input/processed"
+}
+
+output "sagemaker_training_output_uri" {
+  description = "S3 URI where SageMaker writes trained model artifacts."
+  value       = "s3://${aws_s3_bucket.sagemaker_training.id}/output"
+}
+
+output "sagemaker_training_role_arn" {
+  description = "Least-privilege execution role assumed by SageMaker training jobs."
+  value       = aws_iam_role.sagemaker_training.arn
+}
+
+output "sagemaker_submitter_policy_arn" {
+  description = "Policy to attach to an approved developer identity that submits training jobs."
+  value       = aws_iam_policy.sagemaker_submitter.arn
+}

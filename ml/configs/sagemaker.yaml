@@ -1,11 +1,20 @@
 schema_version: "1.0"
 base_job_name: government-contract-classifier
-instance_type: ml.g5.xlarge
+instance_type: ml.g6.xlarge
 instance_count: 1
 transformers_version: "4.36"
 pytorch_version: "2.1"
 py_version: py310
 output_path: null
+tags:
+  - Key: Project
+    Value: contract-review
+  - Key: Environment
+    Value: demo
+  - Key: Application
+    Value: contract-review
+  - Key: ManagedBy
+    Value: SageMaker
 hyperparameters:
   model-name: nlpaueb/legal-bert-base-uncased
   problem-type: multi_label

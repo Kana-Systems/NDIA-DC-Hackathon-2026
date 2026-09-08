@@ -284,16 +284,19 @@ class MlEvaluationTests(unittest.TestCase):
 
         config = validate_config(
             {
-                "instance_type": "ml.g5.xlarge",
+                "instance_type": "ml.g6.xlarge",
                 "transformers_version": "4.36",
                 "pytorch_version": "2.1",
                 "py_version": "py310",
+                "tags": [{"Key": "Project", "Value": "contract-review"}],
                 "hyperparameters": {"problem-type": "multi_label"},
             }
         )
         kwargs = estimator_kwargs(config, "arn:aws-us-gov:iam::123:role/test")
         self.assertTrue(Path(kwargs["source_dir"]).is_absolute())
         self.assertEqual(kwargs["entry_point"], "train.py")
+        self.assertEqual(kwargs["instance_type"], "ml.g6.xlarge")
+        self.assertEqual(kwargs["tags"], [{"Key": "Project", "Value": "contract-review"}])
 
     def test_offline_benchmark_matches_expected_outputs(self):
         report = run()

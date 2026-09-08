@@ -282,16 +282,42 @@ python -m pip install -r ml/requirements-training.txt
 python -m ml.train
 ```
 
-For a one-off SageMaker job, upload the processed files to the Terraform
-artifact bucket, configure the training role, and preview before submitting:
+Terraform provisions a dedicated KMS-encrypted training bucket, a scoped
+SageMaker execution role, and an optional submitter policy. It does not start a
+billable job. After deployment, an administrator may attach the submitter policy
+to an approved developer role:
+
+```bash
+cd infra/terraform
+TRAINING_BUCKET="$(terraform output -raw sagemaker_training_bucket_name)"
+TRAINING_ROLE_ARN="$(terraform output -raw sagemaker_training_role_arn)"
+SUBMITTER_POLICY_ARN="$(terraform output -raw sagemaker_submitter_policy_arn)"
+
+aws iam attach-role-policy \
+  --role-name APPROVED_DEVELOPER_ROLE \
+  --policy-arn "$SUBMITTER_POLICY_ARN"
+cd ../..
+```
+
+From the repository root, install the launcher, upload the processed public CUAD
+files, and preview the resolved `ml.g6.xlarge` job:
 
 ```bash
 python -m pip install -r ml/requirements-sagemaker.txt
-python -m ml.launch_sagemaker \
-  --role-arn arn:aws-us-gov:iam::ACCOUNT:role/ROLE \
-  --training-s3-uri s3://ARTIFACT_BUCKET/cuad/processed/
-# Repeat with --submit only after reviewing the generated job.
+export SAGEMAKER_TRAINING_BUCKET="$TRAINING_BUCKET"
+export SAGEMAKER_ROLE_ARN="$TRAINING_ROLE_ARN"
+./scripts/train-sagemaker.sh
+
+# Explicitly starts billable GPU compute:
+./scripts/train-sagemaker.sh --submit
 ```
+
+The account currently has capacity quota for one `ml.g6.xlarge` training job.
+The script rejects non-GovCloud credentials, validates required input files,
+syncs them to `input/processed`, and writes checkpoints and final artifacts to
+the dedicated bucket. Monitor with `aws sagemaker list-training-jobs` and
+`aws sagemaker describe-training-job`; stop an unwanted job with
+`aws sagemaker stop-training-job`.
 
 Record label metrics, source commit/digest, base model, parameters, and known
 failure modes with each artifact.
