@@ -320,6 +320,15 @@ jobs:
           [[ "$task_definition" =~ ^arn:aws-us-gov:ecs: ]]
           [[ "$task_definition" == *:* ]]
           [[ "$security_group" =~ ^sg-[0-9a-f]+$ ]]
+          task_image="$(
+            aws ecs describe-task-definition \
+              --region "$AWS_REGION" \
+              --task-definition "$task_definition" \
+              --query 'taskDefinition.containerDefinitions[?name==`fixture-ingestion`].image | [0]' \
+              --output text
+          )"
+          [[ "$task_image" == "$TF_VAR_image_uri" ]]
+          [[ "$task_image" =~ @sha256:[0-9a-f]{64}$ ]]
           jq -e \
             'type == "array" and length > 0 and all(.[]; test("^subnet-[0-9a-f]+$"))' \
             <<<"$private_subnets" >/dev/null
@@ -414,7 +423,7 @@ jobs:
             )"
             summary="$(
               jq -cer \
-                '[.[] | fromjson? | select(.durable? == true and (.documents_generated? // 0) >= 120 and (.documents_ingested? // 0) >= 120)] | last // empty' \
+                '[.[] | fromjson? | select(.durable? == true and (.documents_generated? // 0) >= 120 and (.documents_ingested? // 0) >= 120 and (.records_stored? // 0) >= 120)] | last // empty' \
                 <<<"$messages"
             )" || true
             [[ -n "$summary" ]] && break
