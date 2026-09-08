@@ -137,3 +137,8 @@ output "graph_ingestion_schedule_arn" {
   description = "ARN of the optional scheduled Graph delta ingestion job."
   value       = try(aws_scheduler_schedule.graph_ingestion[0].arn, null)
 }
+
+output "ndia_resource_group_arn" {
+  description = "ARN of the tag-based AWS Resource Group for this deployment."
+  value       = aws_resourcegroups_group.ndia.arn
+}

@@ -293,7 +293,7 @@ try {
                     'acm:DescribeCertificate', 'acm:GetCertificate', 'acm:ListCertificates',
                     'application-autoscaling:*', 'cloudwatch:*', 'ec2:*',
                     'dynamodb:*', 'ecs:*', 'elasticloadbalancing:*', 'es:*', 'kms:*', 'logs:*',
-                    'scheduler:*', 'secretsmanager:*', 'sqs:*'
+                    'resource-groups:*', 'scheduler:*', 'secretsmanager:*', 'sqs:*'
                 )
                 Resource = '*'
             },

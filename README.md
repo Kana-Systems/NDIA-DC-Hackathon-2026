@@ -363,6 +363,10 @@ Data: <external_dns_cname_target, without a trailing period>
 Do not remove unrelated Squarespace website or email records. After DNS
 propagates, verify `https://ndia.kana.systems/health`.
 
+Terraform also creates an AWS Resource Group named `ndia`. It includes all
+taggable resources carrying the deployment's `Project` and `Environment` tags;
+AWS-managed resources that do not support those tags are not included.
+
 ## GovCloud deployment
 
 The bootstrap is deliberately out of Terraform because Terraform cannot safely
