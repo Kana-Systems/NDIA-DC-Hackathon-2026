@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "source_dataset": "CUAD v1",
+  "source_license": "CC BY 4.0",
+  "normalized_label_contract": "lowercase snake_case CUAD category",
+  "applicability_warning": "CUAD contains commercial-contract review categories. A mapped label is retrieval or triage evidence only and cannot establish FAR or DFARS applicability.",
+  "mappings": {
+    "termination_for_convenience": {
+      "cuad_category": "Termination For Convenience",
+      "domain_labels": [
+        "termination"
+      ],
+      "notes": "Commercial termination-right language; not a FAR termination clause determination."
+    },
+    "ip_ownership_assignment": {
+      "cuad_category": "IP Ownership Assignment",
+      "domain_labels": [
+        "intellectual_property",
+        "data_rights"
+      ],
+      "notes": "Useful for IP/data-rights triage; does not determine allocation under FAR or DFARS."
+    },
+    "joint_ip_ownership": {
+      "cuad_category": "Joint IP Ownership",
+      "domain_labels": [
+        "intellectual_property",
+        "data_rights"
+      ],
+      "notes": "Commercial joint-ownership concept only."
+    },
+    "license_grant": {
+      "cuad_category": "License Grant",
+      "domain_labels": [
+        "intellectual_property",
+        "data_rights"
+      ],
+      "notes": "License-language retrieval signal only."
+    },
+    "source_code_escrow": {
+      "cuad_category": "Source Code Escrow",
+      "domain_labels": [
+        "software",
+        "data_rights"
+      ],
+      "notes": "Cyber-adjacent software custody signal, not a security-control finding."
+    },
+    "uncapped_liability": {
+      "cuad_category": "Uncapped Liability",
+      "domain_labels": [
+        "liability",
+        "confidentiality_cyber_adjacent"
+      ],
+      "notes": "CUAD guidance includes some confidentiality-breach liability. This does not identify a confidentiality clause, cyber incident, CUI, or regulatory applicability."
+    },
+    "insurance": {
+      "cuad_category": "Insurance",
+      "domain_labels": [
+        "insurance",
+        "cyber_adjacent"
+      ],
+      "notes": "May support insurance triage; the CUAD label does not identify cyber coverage."
+    }
+  }
+}

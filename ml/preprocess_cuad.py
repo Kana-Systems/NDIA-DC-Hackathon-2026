@@ -92,26 +92,38 @@ def _paragraph_windows(
     spans = _answer_spans(paragraph)
     positive_by_bounds: dict[tuple[int, int], dict[str, Any]] = {}
     for span in spans:
-        bounds = answer_centered_bounds(
-            len(context),
-            span["start"],
-            span["end"],
-            window_chars,
-        )
-        labels = sorted(
-            {
-                candidate["label"]
-                for candidate in spans
-                if bounds[0] <= candidate["start"] and candidate["end"] <= bounds[1]
+        if span["end"] - span["start"] > window_chars:
+            span_windows = [
+                (span["start"] + start, span["start"] + end)
+                for start, end in sliding_bounds(
+                    span["end"] - span["start"], window_chars, stride_chars
+                )
+            ]
+        else:
+            span_windows = [
+                answer_centered_bounds(
+                    len(context),
+                    span["start"],
+                    span["end"],
+                    window_chars,
+                )
+            ]
+        for bounds in span_windows:
+            labels = sorted(
+                {
+                    candidate["label"]
+                    for candidate in spans
+                    if (bounds[0] <= candidate["start"] and candidate["end"] <= bounds[1])
+                    or (candidate["start"] <= bounds[0] and bounds[1] <= candidate["end"])
+                }
+            )
+            positive_by_bounds[bounds] = {
+                "start_char": bounds[0],
+                "end_char": bounds[1],
+                "text": context[bounds[0] : bounds[1]],
+                "labels": labels,
+                "is_negative": False,
             }
-        )
-        positive_by_bounds[bounds] = {
-            "start_char": bounds[0],
-            "end_char": bounds[1],
-            "text": context[bounds[0] : bounds[1]],
-            "labels": labels,
-            "is_negative": False,
-        }
 
     negative_candidates = [
         (start, end)
@@ -131,7 +143,14 @@ def _paragraph_windows(
             "labels": [],
             "is_negative": True,
         }
-        for start, end in negative_candidates[:negative_limit]
+        for start, end in (
+            negative_candidates
+            if len(negative_candidates) <= negative_limit
+            else [
+                negative_candidates[(i * len(negative_candidates)) // negative_limit]
+                for i in range(negative_limit)
+            ]
+        )
     ]
     windows = [*positive_by_bounds.values(), *negatives]
     windows.sort(key=lambda item: (item["start_char"], item["end_char"], item["is_negative"]))

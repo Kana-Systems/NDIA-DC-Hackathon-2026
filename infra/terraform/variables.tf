@@ -164,6 +164,24 @@ variable "desired_count" {
   }
 }
 
+variable "sagemaker_allowed_training_instance_types" {
+  description = "SageMaker instance types approved for developer-submitted training jobs."
+  type        = set(string)
+  default = [
+    "ml.g4dn.xlarge",
+    "ml.g6.xlarge",
+    "ml.m5.2xlarge",
+  ]
+
+  validation {
+    condition = length(var.sagemaker_allowed_training_instance_types) > 0 && alltrue([
+      for instance_type in var.sagemaker_allowed_training_instance_types :
+      can(regex("^ml\\.[a-z0-9]+\\.[a-z0-9]+$", instance_type))
+    ])
+    error_message = "SageMaker training instance types must use the ml.family.size format."
+  }
+}
+
 variable "allowed_ingress_cidrs" {
   description = "Explicit IPv4 CIDRs allowed to reach HTTPS; no public-access default is provided."
   type        = list(string)

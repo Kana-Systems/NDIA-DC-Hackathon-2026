@@ -319,6 +319,8 @@ class ReviewReport(BaseModel):
     synthesis_mode: str
     classifier_model_ids: list[str]
     ablation_summary: AblationSummary
+    corpus_manifest: dict = Field(default_factory=dict)
+    knowledge_graph: dict = Field(default_factory=dict)
 
     def severity_counts(self) -> dict[str, int]:
         return {

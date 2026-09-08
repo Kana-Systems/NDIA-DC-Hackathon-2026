@@ -22,7 +22,29 @@ dist/
 # Generated data and model artifacts
 ml/data/
 ml/output/
-artifacts/
+artifacts/*
+!artifacts/knowledge/
+artifacts/knowledge/*
+!artifacts/knowledge/federal-v2.sqlite
+!artifacts/models/
+artifacts/models/*
+!artifacts/models/selected.json
+!artifacts/models/comparison.json
+!artifacts/models/legal-bert-cuad/
+artifacts/models/legal-bert-cuad/*
+!artifacts/models/legal-bert-cuad/model.safetensors
+!artifacts/models/legal-bert-cuad/config.json
+!artifacts/models/legal-bert-cuad/tokenizer.json
+!artifacts/models/legal-bert-cuad/tokenizer_config.json
+!artifacts/models/legal-bert-cuad/special_tokens_map.json
+!artifacts/models/legal-bert-cuad/vocab.txt
+!artifacts/models/legal-bert-cuad/label_mapping.json
+!artifacts/models/legal-bert-cuad/window_config.json
+!artifacts/models/legal-bert-cuad/cuad_category_domain_mapping.json
+!artifacts/models/legal-bert-cuad/training_provenance.json
+!artifacts/models/legal-bert-cuad/evaluation_metrics.json
+!artifacts/models/legal-bert-cuad/CUAD_ATTRIBUTION.md
+!artifacts/models/legal-bert-cuad/PRETRAINED_ATTRIBUTION.md
 reports/
 uploads/
 .coverage
@@ -50,6 +72,8 @@ infra/terraform/terraform.tfvars
 terraform.rc
 
 # Editors and operating systems
+node_modules/
+*.tsbuildinfo
 .vscode/
 .idea/
 .DS_Store

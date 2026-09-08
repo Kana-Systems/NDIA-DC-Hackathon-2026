@@ -24,6 +24,14 @@ def validate_config(config: object) -> dict:
     hyperparameters = config.get("hyperparameters", {})
     if not isinstance(hyperparameters, dict):
         raise ValueError("hyperparameters must be a mapping")
+    for key in ("entry_point", "source_dir", "base_job_name"):
+        if key in config and (not isinstance(config[key], str) or not config[key].strip()):
+            raise ValueError(f"{key} must be a non-empty string")
+    for key in ("max_run", "max_wait", "max_retry_attempts"):
+        if key in config and (not isinstance(config[key], int) or config[key] < 1):
+            raise ValueError(f"{key} must be a positive integer")
+    if "use_spot_instances" in config and not isinstance(config["use_spot_instances"], bool):
+        raise ValueError("use_spot_instances must be a boolean")
     tags = config.get("tags", [])
     if not isinstance(tags, list) or not all(
         isinstance(tag, dict)
@@ -36,9 +44,15 @@ def validate_config(config: object) -> dict:
 
 
 def estimator_kwargs(config: dict, role_arn: str) -> dict:
+    source_dir = Path(config.get("source_dir", MODULE_DIR)).expanduser().resolve()
+    entry_point = config.get("entry_point", "train.py")
+    if not source_dir.is_dir():
+        raise ValueError(f"SageMaker source_dir does not exist: {source_dir}")
+    if not (source_dir / entry_point).is_file():
+        raise ValueError(f"SageMaker entry_point does not exist: {source_dir / entry_point}")
     kwargs = {
-        "entry_point": "train.py",
-        "source_dir": str(MODULE_DIR),
+        "entry_point": entry_point,
+        "source_dir": str(source_dir),
         "role": role_arn,
         "instance_type": config["instance_type"],
         "instance_count": config.get("instance_count", 1),
@@ -49,7 +63,14 @@ def estimator_kwargs(config: dict, role_arn: str) -> dict:
         "output_path": config.get("output_path"),
         "base_job_name": config.get("base_job_name", "contract-classifier"),
     }
-    for optional_key in ("checkpoint_s3_uri", "tags"):
+    for optional_key in (
+        "checkpoint_s3_uri",
+        "max_retry_attempts",
+        "max_run",
+        "max_wait",
+        "tags",
+        "use_spot_instances",
+    ):
         if config.get(optional_key):
             kwargs[optional_key] = config[optional_key]
     return kwargs

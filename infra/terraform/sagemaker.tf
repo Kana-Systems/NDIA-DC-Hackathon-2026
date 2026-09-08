@@ -200,10 +200,21 @@ resource "aws_iam_role_policy" "sagemaker_training" {
 
 data "aws_iam_policy_document" "sagemaker_submitter" {
   statement {
-    sid = "ManageClassifierTrainingJobs"
+    sid       = "CreateApprovedTrainingJobs"
+    actions   = ["sagemaker:CreateTrainingJob"]
+    resources = ["*"]
+
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "sagemaker:InstanceTypes"
+      values   = sort(tolist(var.sagemaker_allowed_training_instance_types))
+    }
+  }
+
+  statement {
+    sid = "ManageTrainingJobs"
     actions = [
       "sagemaker:AddTags",
-      "sagemaker:CreateTrainingJob",
       "sagemaker:DescribeTrainingJob",
       "sagemaker:ListTrainingJobs",
       "sagemaker:StopTrainingJob",
@@ -253,7 +264,7 @@ data "aws_iam_policy_document" "sagemaker_submitter" {
 
 resource "aws_iam_policy" "sagemaker_submitter" {
   name        = "${local.sagemaker_training_name}-submitter"
-  description = "Submit and monitor classifier training jobs; attach only to approved developers."
+  description = "Submit and monitor approved SageMaker training jobs; attach only to developers."
   policy      = data.aws_iam_policy_document.sagemaker_submitter.json
   tags        = local.common_tags
 }

@@ -626,7 +626,7 @@ resource "aws_lb_listener_rule" "ui_routes" {
 
   condition {
     path_pattern {
-      values = ["/", "/ui", "/ui/*"]
+      values = ["/", "/lens", "/lens/*", "/ui", "/ui/*"]
     }
   }
 }

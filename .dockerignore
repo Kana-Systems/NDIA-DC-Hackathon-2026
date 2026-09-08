@@ -7,6 +7,8 @@
 **/.ruff_cache
 **/.terraform
 **/*.tfstate*
+**/node_modules
+frontend/dist
 ml/data
 ml/output
 ml/artifacts

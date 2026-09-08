@@ -68,6 +68,10 @@ def _artifact_settings(path: Path) -> dict[str, Any]:
 
 def model_fn(model_dir: str) -> Any:
     path = Path(model_dir)
+    if (path / "linear_config.json").exists():
+        from ml.linear import LinearClassifier
+
+        return LinearClassifier(path)
     if not (path / "config.json").exists():
         return HeuristicClassifier()
     try:
@@ -83,6 +87,7 @@ def model_fn(model_dir: str) -> Any:
         model=model,
         tokenizer=tokenizer,
         top_k=None,
+        batch_size=16,
     )
     return TransformerClassifier(predictor=predictor, **_artifact_settings(path))
 
@@ -152,7 +157,11 @@ def predict_fn(payload: dict[str, Any], model: Any) -> dict[str, Any]:
             threshold,
         )
     else:
-        raise TypeError("model_fn must return a supported classifier")
+        from ml.linear import LinearClassifier
+
+        if not isinstance(model, LinearClassifier):
+            raise TypeError("model_fn must return a supported classifier")
+        predictions = [model.predict(text, threshold) for text in payload["texts"]]
     return {"predictions": predictions}
 
 

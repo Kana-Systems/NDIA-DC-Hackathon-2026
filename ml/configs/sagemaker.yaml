@@ -2,6 +2,8 @@ schema_version: "1.0"
 base_job_name: government-contract-classifier
 instance_type: ml.g6.xlarge
 instance_count: 1
+max_run: 10800
+use_spot_instances: false
 transformers_version: "4.36"
 pytorch_version: "2.1"
 py_version: py310
@@ -13,6 +15,8 @@ tags:
     Value: demo
   - Key: Application
     Value: contract-review
+  - Key: ModelFamily
+    Value: legal-bert
   - Key: ManagedBy
     Value: SageMaker
 hyperparameters:

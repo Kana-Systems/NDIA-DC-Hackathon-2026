@@ -22,6 +22,7 @@ dependencies = [
     "python-multipart>=0.0.18,<1",
     "PyYAML>=6,<7",
     "requests>=2.32,<3",
+    "scikit-learn>=1.6,<2",
     "uvicorn[standard]>=0.32,<1",
 ]
 
@@ -38,7 +39,11 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["app*", "ingestion*"]
+include = ["app*", "evaluation*", "ingestion*", "knowledge*", "ml*"]
+
+[tool.setuptools.package-data]
+knowledge = ["**/*.json", "**/*.jsonl", "**/*.yaml"]
+ml = ["**/*.json", "**/*.md", "**/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
