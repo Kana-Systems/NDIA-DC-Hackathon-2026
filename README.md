@@ -54,8 +54,7 @@ Terraform deploys into `us-gov-west-1` in the `aws-us-gov` partition:
 - a digest-pinned fixture-ingestion task and, when a Graph secret container is
   explicitly enabled, a scheduled sovereign Microsoft Graph delta task;
 - generated judge credentials in Secrets Manager, least-privilege ECS task and
-  execution roles, 30-day CloudWatch logs, an ALB 5xx alarm, and monthly budget
-  notifications.
+  execution roles, 30-day CloudWatch logs, and an ALB 5xx alarm.
 
 Resource names and tags contain operational identifiers only. Contract text,
 findings, document names, and excerpts must never be placed in AWS tags,
@@ -146,8 +145,8 @@ data restrictions remain in force.
   does not prove GovCloud runtime access.
 - A GitHub environment named `govcloud-demo` configured with required reviewers.
   The only AWS-authenticated job is bound to this environment.
-- A confirmed budget-alert email recipient. AWS budget notification emails may
-  require the recipient to confirm delivery.
+- A cost budget configured in the linked standard AWS account, where GovCloud
+  billing information and AWS Budgets are managed.
 
 [bedrock-access]: https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html
 
@@ -419,8 +418,8 @@ controls before accepting contributions:
 Set the GitHub Actions secrets printed by the script. Repository secrets work;
 placing them in the protected `govcloud-demo` environment is preferred:
 `AWS_GOV_REGION`, `AWS_GOV_ROLE_ARN`, `TF_STATE_BUCKET`, `TF_STATE_KEY`,
-`APP_DOMAIN`, `BUDGET_ALERT_EMAIL`, and
-`ALLOWED_INGRESS_CIDRS_JSON` (for example, `["192.0.2.10/32"]`). Terraform has
+`APP_DOMAIN`, and `ALLOWED_INGRESS_CIDRS_JSON` (for example,
+`["192.0.2.10/32"]`). Terraform has
 no default ingress range; supply only reviewed judge or VPN egress CIDRs.
 Also set `SECURITY_DOMAIN=demo` and
 `CREATE_GRAPH_CONNECTOR_SECRET=false`. Environment approval occurs before these

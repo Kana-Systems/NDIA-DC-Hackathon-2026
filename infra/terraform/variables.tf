@@ -153,27 +153,6 @@ variable "opensearch_index" {
   }
 }
 
-variable "monthly_budget_usd" {
-  description = "Monthly cost budget in USD."
-  type        = number
-  default     = 250
-
-  validation {
-    condition     = var.monthly_budget_usd >= 10
-    error_message = "monthly_budget_usd must be at least 10."
-  }
-}
-
-variable "budget_alert_email" {
-  description = "Email address that receives budget threshold notifications."
-  type        = string
-
-  validation {
-    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_alert_email))
-    error_message = "budget_alert_email must be a valid email address."
-  }
-}
-
 variable "desired_count" {
   description = "Number of Fargate tasks for the demo."
   type        = number

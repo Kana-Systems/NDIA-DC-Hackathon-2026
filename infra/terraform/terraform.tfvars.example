@@ -1,5 +1,4 @@
 domain_name        = "ndia.kana.systems"
-budget_alert_email = "platform-team@example.mil"
 security_domain    = "demo"
 
 # Creates only the secret container. Populate connector credentials separately.
@@ -9,5 +8,4 @@ create_graph_connector_secret = false
 # Replace this documentation-only range with known judge or VPN egress CIDRs.
 allowed_ingress_cidrs = ["192.0.2.0/24"]
 
-monthly_budget_usd = 250
-desired_count      = 1
+desired_count = 1

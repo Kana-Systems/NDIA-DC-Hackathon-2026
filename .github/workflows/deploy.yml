@@ -104,7 +104,6 @@ jobs:
       TF_VAR_security_domain: ${{ secrets.SECURITY_DOMAIN || 'demo' }}
       TF_VAR_create_graph_connector_secret: ${{ secrets.CREATE_GRAPH_CONNECTOR_SECRET || 'false' }}
       TF_VAR_domain_name: ${{ secrets.APP_DOMAIN }}
-      TF_VAR_budget_alert_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
       TF_VAR_allowed_ingress_cidrs: ${{ secrets.ALLOWED_INGRESS_CIDRS_JSON }}
     permissions:
       contents: read
@@ -126,7 +125,6 @@ jobs:
           [[ "$TF_VAR_security_domain" =~ ^[a-z][a-z0-9-]{1,15}$ ]]
           [[ "$TF_VAR_create_graph_connector_secret" =~ ^(true|false)$ ]]
           [[ "$TF_VAR_domain_name" =~ ^[a-z0-9.-]+\.[a-z]{2,}$ ]]
-          [[ "$TF_VAR_budget_alert_email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]
           jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' \
             <<<"$TF_VAR_allowed_ingress_cidrs" >/dev/null
 

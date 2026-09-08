@@ -291,7 +291,7 @@ try {
                 Effect = 'Allow'
                 Action = @(
                     'acm:DescribeCertificate', 'acm:GetCertificate', 'acm:ListCertificates',
-                    'application-autoscaling:*', 'budgets:*', 'cloudwatch:*', 'ec2:*',
+                    'application-autoscaling:*', 'cloudwatch:*', 'ec2:*',
                     'dynamodb:*', 'ecs:*', 'elasticloadbalancing:*', 'es:*', 'kms:*', 'logs:*',
                     'scheduler:*', 'secretsmanager:*', 'sqs:*'
                 )
@@ -338,7 +338,6 @@ Immutable GitHub identity:
 
 Also configure:
   APP_DOMAIN                   externally managed hostname, such as ndia.kana.systems
-  BUDGET_ALERT_EMAIL           operational alert recipient
   ALLOWED_INGRESS_CIDRS_JSON   reviewed JSON list, such as ["192.0.2.10/32"]
 
 No static AWS access key is required.
