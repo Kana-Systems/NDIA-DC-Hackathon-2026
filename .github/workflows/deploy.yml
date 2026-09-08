@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -d tests ]]; then pytest -q; fi
+          if [[ -d tests ]]; then python -m pytest -q; fi
 
       - name: Run deterministic intelligence evaluation
         shell: bash

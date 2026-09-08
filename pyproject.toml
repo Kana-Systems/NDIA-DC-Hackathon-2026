@@ -42,6 +42,7 @@ include = ["app*", "ingestion*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-q --disable-warnings --strict-markers"
 
 [tool.ruff]
