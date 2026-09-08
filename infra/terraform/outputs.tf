@@ -149,12 +149,12 @@ output "sagemaker_training_bucket_name" {
 }
 
 output "sagemaker_training_input_uri" {
-  description = "S3 URI where processed classifier training files are uploaded."
-  value       = "s3://${aws_s3_bucket.sagemaker_training.id}/input/processed"
+  description = "S3 prefix for model-family-specific SageMaker training inputs."
+  value       = "s3://${aws_s3_bucket.sagemaker_training.id}/input"
 }
 
 output "sagemaker_training_output_uri" {
-  description = "S3 URI where SageMaker writes trained model artifacts."
+  description = "S3 prefix where SageMaker writes model-family-specific artifacts."
   value       = "s3://${aws_s3_bucket.sagemaker_training.id}/output"
 }
 

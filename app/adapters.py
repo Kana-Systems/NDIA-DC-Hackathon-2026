@@ -960,11 +960,6 @@ class BedrockGPT56TerraSynthesisAdapter:
         rule_findings: Sequence[RuleFinding],
         evidence: Sequence[Evidence],
     ) -> tuple[str, list[Finding], str]:
-        import boto3
-        import requests
-        from botocore.auth import SigV4Auth
-        from botocore.awsrequest import AWSRequest
-
         prompt = {
             "instruction": (
                 "Return JSON with executive_summary and findings. Preserve rule_id, "
@@ -974,47 +969,7 @@ class BedrockGPT56TerraSynthesisAdapter:
             "findings": [finding.model_dump(mode="json") for finding in rule_findings],
             "evidence": [item.model_dump(mode="json") for item in evidence],
         }
-        url = f"https://bedrock-mantle.{self.settings.aws_region}.api.aws/openai/v1/responses"
-        body = json.dumps(
-            {
-                "model": self.settings.bedrock_model_id,
-                "input": json.dumps(prompt, separators=(",", ":")),
-                "max_output_tokens": 3000,
-                "store": False,
-            },
-            separators=(",", ":"),
-        )
-        credentials = self._credentials or boto3.Session().get_credentials()
-        if credentials is None:
-            raise RuntimeError("AWS credentials are unavailable")
-        request = AWSRequest(
-            method="POST",
-            url=url,
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-        )
-        get_frozen_credentials = getattr(credentials, "get_frozen_credentials", None)
-        if callable(get_frozen_credentials):
-            credentials = get_frozen_credentials()
-        SigV4Auth(
-            credentials,
-            "bedrock-mantle",
-            self.settings.aws_region,
-        ).add_auth(request)
-        transport = self._transport or requests.Session()
-        response = transport.post(
-            url,
-            data=body,
-            headers=dict(request.headers),
-            timeout=self.settings.bedrock_timeout_seconds,
-        )
-        response.raise_for_status()
-        payload_response = response.json()
-        text = self._extract_response_text(payload_response)
-        payload = self._parse_response(text)
+        payload = self.request_json(prompt)
         source_map = {finding.rule_id: finding for finding in rule_findings}
         findings: list[Finding] = []
         raw_findings = payload.get("findings")
@@ -1050,6 +1005,56 @@ class BedrockGPT56TerraSynthesisAdapter:
         if not isinstance(summary, str) or not summary.strip():
             summary = self._summary(findings)
         return summary.strip(), findings, "bedrock-gpt-5.6-terra"
+
+    def request_json(self, prompt: dict, max_output_tokens: int = 3000) -> dict:
+        """Run Terra with an explicit structured prompt; errors propagate to caller."""
+        import boto3
+        import requests
+        from botocore.auth import SigV4Auth
+        from botocore.awsrequest import AWSRequest
+
+        url = f"https://bedrock-mantle.{self.settings.aws_region}.api.aws/openai/v1/responses"
+        body = json.dumps(
+            {
+                "model": self.settings.bedrock_model_id,
+                "input": json.dumps(prompt, separators=(",", ":")),
+                "max_output_tokens": max_output_tokens,
+                "store": False,
+            },
+            separators=(",", ":"),
+        )
+        credentials = self._credentials or boto3.Session().get_credentials()
+        if credentials is None:
+            raise RuntimeError("AWS credentials are unavailable")
+        request = AWSRequest(
+            method="POST",
+            url=url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        get_frozen_credentials = getattr(credentials, "get_frozen_credentials", None)
+        if callable(get_frozen_credentials):
+            credentials = get_frozen_credentials()
+        SigV4Auth(
+            credentials,
+            "bedrock-mantle",
+            self.settings.aws_region,
+        ).add_auth(request)
+        transport = self._transport or requests.Session()
+        response = transport.post(
+            url,
+            data=body,
+            headers=dict(request.headers),
+            timeout=self.settings.bedrock_timeout_seconds,
+        )
+        response.raise_for_status()
+        payload_response = response.json()
+        self.last_usage = payload_response.get("usage", {})
+        text = self._extract_response_text(payload_response)
+        return self._parse_response(text)
 
     @staticmethod
     def _extract_response_text(payload: Any) -> str:

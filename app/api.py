@@ -79,6 +79,13 @@ def require_judge_credentials(
 def get_review_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ReviewService:
+    if settings.model_review_enabled:
+        from app.model_review import ModelReviewService
+
+        try:
+            return ModelReviewService(settings)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
     return ReviewService(settings)
 
 

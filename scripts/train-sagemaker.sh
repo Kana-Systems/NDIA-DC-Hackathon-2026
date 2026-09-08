@@ -13,10 +13,20 @@ fi
 : "${SAGEMAKER_ROLE_ARN:?Set SAGEMAKER_ROLE_ARN from the Terraform output.}"
 
 AWS_REGION="${AWS_REGION:-us-gov-west-1}"
+MODEL_FAMILY="${MODEL_FAMILY:-legal-bert}"
+SAGEMAKER_CONFIG="${SAGEMAKER_CONFIG:-ml/configs/sagemaker.yaml}"
 TRAINING_DIR="${TRAINING_DIR:-ml/data/processed}"
-TRAINING_URI="s3://${SAGEMAKER_TRAINING_BUCKET}/input/processed"
-OUTPUT_URI="s3://${SAGEMAKER_TRAINING_BUCKET}/output"
-CHECKPOINT_URI="s3://${SAGEMAKER_TRAINING_BUCKET}/checkpoints/legal-bert"
+[[ "$MODEL_FAMILY" =~ ^[a-z0-9][a-z0-9-]{1,62}$ ]] || {
+  echo "MODEL_FAMILY must contain lowercase letters, digits, and hyphens." >&2
+  exit 64
+}
+[[ -s "$SAGEMAKER_CONFIG" ]] || {
+  echo "Missing SageMaker model configuration: ${SAGEMAKER_CONFIG}" >&2
+  exit 66
+}
+TRAINING_URI="s3://${SAGEMAKER_TRAINING_BUCKET}/input/${MODEL_FAMILY}"
+OUTPUT_URI="s3://${SAGEMAKER_TRAINING_BUCKET}/output/${MODEL_FAMILY}"
+CHECKPOINT_URI="s3://${SAGEMAKER_TRAINING_BUCKET}/checkpoints/${MODEL_FAMILY}"
 
 if command -v python >/dev/null 2>&1; then
   PYTHON_BIN="${PYTHON_BIN:-python}"
@@ -50,6 +60,7 @@ aws s3 sync "$TRAINING_DIR" "$TRAINING_URI" \
   --only-show-errors
 
 launcher_args=(
+  --config "$SAGEMAKER_CONFIG"
   --role-arn "$SAGEMAKER_ROLE_ARN"
   --training-s3-uri "$TRAINING_URI"
   --output-s3-uri "$OUTPUT_URI"
@@ -57,7 +68,7 @@ launcher_args=(
 )
 
 if [[ "$submit" == true ]]; then
-  echo "Submitting a billable ml.g6.xlarge SageMaker training job."
+  echo "Submitting a billable SageMaker training job for ${MODEL_FAMILY}."
   launcher_args+=(--submit)
 else
   echo "Dry run only; rerun with --submit to start billable GPU training."

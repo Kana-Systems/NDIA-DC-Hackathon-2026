@@ -1,3 +1,11 @@
+FROM node:22.12.0-bookworm-slim@sha256:35531c52ce27b6575d69755c73e65d4468dba93a25644eed56dc12879cae9213 AS frontend
+
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend ./
+RUN npm run build
+
 FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -18,6 +26,7 @@ COPY app ./app
 COPY ingestion ./ingestion
 COPY ml ./ml
 COPY knowledge ./knowledge
+COPY --from=frontend /build/frontend/dist ./frontend/dist
 COPY docker-entrypoint.py /usr/local/bin/app-entrypoint
 RUN chown -R app:app /srv/app && chmod 0555 /usr/local/bin/app-entrypoint
 

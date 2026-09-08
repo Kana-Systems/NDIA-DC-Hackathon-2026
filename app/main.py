@@ -7,9 +7,11 @@ from pathlib import Path
 import gradio as gr
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api import router
 from app.config import Settings, get_settings
+from app.lens import router as lens_router
 from app.ui import build_ui
 
 
@@ -27,10 +29,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.state.review_semaphore = asyncio.Semaphore(settings.max_review_concurrency)
     api.dependency_overrides[get_settings] = lambda: settings
     api.include_router(router)
+    api.include_router(lens_router)
+    lens_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+    if lens_dist.is_dir():
+        api.mount("/lens", StaticFiles(directory=lens_dist, html=True), name="lens")
 
     @api.get("/", include_in_schema=False)
     def index() -> RedirectResponse:
-        return RedirectResponse("/ui/")
+        return RedirectResponse("/lens/" if lens_dist.is_dir() else "/ui/")
 
     return gr.mount_gradio_app(
         api,

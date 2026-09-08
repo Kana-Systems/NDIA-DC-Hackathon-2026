@@ -34,7 +34,12 @@ class Settings(BaseSettings):
     classifier_model_dir: str = "/srv/app/ml/model"
     classifier_domain_mapping_path: str = "ml/cuad_category_domain_mapping.json"
     classifier_threshold: float = Field(default=0.5, ge=0, le=1)
+    classifier_thresholds_path: str = ""
     bedrock_enabled: bool = False
+    model_review_enabled: bool = False
+    model_review_max_candidates: int = Field(default=12, ge=1, le=30)
+    local_corpus_path: str = ""
+    model_selection_path: str = ""
     bedrock_model_id: str = "openai.gpt-5.6-terra"
     aws_region: str = "us-gov-west-1"
     bedrock_timeout_seconds: int = Field(default=25, ge=1, le=120)

@@ -1,5 +1,73 @@
 # Government Contract Review Demo
 
+## Combined Acquisition Lens application
+
+The integrated application combines the React judge interface with this
+repository's parsing, identity, ingestion, and model infrastructure.
+Read [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) for decisions and progress.
+
+The model workflow is document upload/paste → trained clause classifier →
+Terra-guided search of ingested FAR/DFARS passages → Terra risk review →
+citation/location validation → finding cards, clause inventory, and evidence graph.
+Model mode reports an error if a required model or service fails; it does not
+silently substitute the deterministic demo. `GET /health` only checks the web
+service; it does not prove Bedrock or model readiness.
+
+```bash
+git lfs install
+git clone https://github.com/Kana-Systems/NDIA-DC-Hackathon-2026.git
+cd NDIA-DC-Hackathon-2026
+git lfs pull
+bash scripts/setup-local.sh
+bash scripts/run-local.sh
+```
+
+Install [Git LFS](https://git-lfs.com), Python 3.12, and Node.js 22.12+ first.
+For an existing clone, pull the latest commit and run `git lfs pull` before
+setup. The selected trained Legal-BERT weights and
+corrected FAR/DFARS database are included through LFS (about 458 MiB combined).
+No retraining or corpus rebuild is needed. Setup installs both application and
+transformer dependencies; it does not start training. GitHub source ZIP downloads
+may contain LFS pointers instead of the actual files, so prefer cloning with LFS.
+See [SHARED_ARTIFACTS.md](SHARED_ARTIFACTS.md) for verification and limitations.
+
+Open **http://127.0.0.1:8080/lens/**. Local password: `contract-demo`, unless
+overridden using `GRADIO_PASSWORD`. The advanced Gradio interface remains at
+`/ui/` (username `judge`). The React workflow accepts pasted text and PDF/DOCX
+uploads, collects acquisition metadata, and displays actual model identifiers.
+The current model review limit is 30,000 extracted characters per request; larger
+documents require splitting. Upload parsing also enforces archive, page, and size
+limits. On macOS the Linux address-space limit is unavailable; subprocess timeout
+and explicit document bounds remain active.
+
+The run script enables live **GPT-5.6 Terra through AWS Bedrock** by default and
+uses the existing AWS credential chain. Inference is billable and sends supplied
+document text and retrieved evidence to Bedrock. Use public or synthetic documents
+for this prototype. To explicitly run the legacy offline engine, set both
+`MODEL_REVIEW_ENABLED=false BEDROCK_ENABLED=false` when launching.
+
+The following release artifacts are shared; other generated files stay ignored:
+
+- `artifacts/knowledge/federal-v2.sqlite` (LFS): official source snapshots indexed for
+  full-text retrieval, with commit versions, content hashes and reference links.
+- `artifacts/models/legal-bert-cuad/`: completed trained weights (LFS), tokenizer,
+  configuration, attribution, provenance and measured evaluation results.
+  `artifacts/models/selected.json` selects this completed baseline; comparison
+  metrics are also included. Experimental candidates/checkpoints are not shared.
+- `ml/data/` remains excluded: downloaded CUAD and training/validation/test data.
+
+Rebuild source data with official GSA FAR/DFARS clones under
+`artifacts/sources/far` and `artifacts/sources/dfars`, then run
+`python -m knowledge.build_local`. A catalog entry is not an ingested source.
+This local corpus currently covers those GSA DITA snapshots; other sources in the
+20-entry catalog remain research/ingestion candidates.
+
+Model commands and licenses: [ml/README.md](ml/README.md),
+[CUAD attribution](ml/CUAD_ATTRIBUTION.md), and
+[pretrained-model attribution](ml/PRETRAINED_ATTRIBUTION.md).
+Run `bash scripts/check-local.sh` for regression checks. A live synthetic review
+is available via `.venv/bin/python scripts/verify-model-review.py`.
+
 An explainable pre-review assistant for public or synthetic government contract
 documents. It identifies likely clauses, applies deterministic acquisition
 rules, retrieves supporting policy passages, and uses GPT-5.6 Terra in Amazon
@@ -314,27 +382,31 @@ export SAGEMAKER_ROLE_ARN="$TRAINING_ROLE_ARN"
 
 The account currently has capacity quota for one `ml.g6.xlarge` training job.
 The script rejects non-GovCloud credentials, validates required input files,
-syncs them to `input/processed`, and writes checkpoints and final artifacts to
-the dedicated bucket. Monitor with `aws sagemaker list-training-jobs` and
+syncs them to `input/<model-family>`, and writes checkpoints and final artifacts
+under matching model-family prefixes. Job creation is limited to the approved
+instance types configured in Terraform and each supplied config has a maximum
+runtime. To compare another encoder, set `MODEL_FAMILY` and
+`SAGEMAKER_CONFIG`; see `ml/README.md` for the included RoBERTa example.
+Monitor with `aws sagemaker list-training-jobs` and
 `aws sagemaker describe-training-job`; stop an unwanted job with
 `aws sagemaker stop-training-job`.
 
 Record label metrics, source commit/digest, base model, parameters, and known
 failure modes with each artifact.
 
-ECS sets `CLASSIFIER_ENABLED=true` and
-`CLASSIFIER_MODEL_DIR=/srv/app/ml/model`. The packaged adapter always combines
-classifier output with transparent keyword coverage. The standard image uses
-the deterministic heuristic fallback when no trained Hugging Face artifact is
-included at `CLASSIFIER_MODEL_DIR`, or when loading/inference fails. A trained
-image must include the model/tokenizer files and provenance manifest at that
-path. Record the CUAD digest, training code revision, base model, label map,
-threshold, and evaluation metrics with the artifact and surface that provenance
-in demo reports.
+ECS sets `CLASSIFIER_ENABLED=true`; the packaged adapter combines classifier
+output with transparent keyword coverage and fails back to the deterministic
+heuristic when no deployable artifact is present. The imported Legal-BERT
+snapshot is retained through Git LFS for repeatable local evaluation, but
+`MODEL_REVIEW_ENABLED` remains false in the GovCloud deployment until its
+federal benefit gate passes and a reviewed inference image explicitly packages
+the model, tokenizer, provenance, and compatible CPU inference dependencies.
+Do not silently promote a SageMaker output into the application.
 
 Terraform intentionally does not provision a continuously running SageMaker
 endpoint. SageMaker is used only for an explicitly submitted, one-off training
-job; low-volume demo inference loads the packaged artifact inside Fargate.
+job; low-volume demo inference can load a separately approved packaged artifact
+inside Fargate.
 For the judging ablation, compare `CLASSIFIER_ENABLED=false` (rules/RAG plus
 keyword baseline) with `CLASSIFIER_ENABLED=true` (packaged classifier plus the
 same rules/RAG), using the same synthetic inputs and recording the active model

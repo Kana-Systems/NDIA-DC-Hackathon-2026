@@ -50,6 +50,10 @@ class ReviewService:
 
     @staticmethod
     def _build_retrieval(settings: Settings) -> RetrievalAdapter:
+        if settings.local_corpus_path:
+            from app.local_retrieval import FederalCorpusRetrieval
+
+            return FederalCorpusRetrieval(settings.local_corpus_path)
         local = LocalRetrievalAdapter()
         if not settings.opensearch_endpoint:
             return local
