@@ -2,7 +2,7 @@
 
 ## Combined Acquisition Lens application
 
-The `integration/acquisition-lens` branch combines the React judge interface
+The `first-test-merge` branch combines the React judge interface
 with this repository's parsing, identity, ingestion, and model infrastructure.
 Read [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) for decisions and progress.
 
@@ -14,9 +14,22 @@ silently substitute the deterministic demo. `GET /health` only checks the web
 service; it does not prove Bedrock or model readiness.
 
 ```bash
+git lfs install
+git clone --branch first-test-merge https://github.com/Kana-Systems/NDIA-DC-Hackathon-2026.git
+cd NDIA-DC-Hackathon-2026
+git lfs pull
 bash scripts/setup-local.sh
 bash scripts/run-local.sh
 ```
+
+Install [Git LFS](https://git-lfs.com), Python 3.12, and Node.js 22.12+ first.
+For an existing clone, switch to `first-test-merge`, pull the latest commit, and
+run `git lfs pull` before setup. The selected trained Legal-BERT weights and
+corrected FAR/DFARS database are included through LFS (about 458 MiB combined).
+No retraining or corpus rebuild is needed. Setup installs both application and
+transformer dependencies; it does not start training. GitHub source ZIP downloads
+may contain LFS pointers instead of the actual files, so prefer cloning with LFS.
+See [SHARED_ARTIFACTS.md](SHARED_ARTIFACTS.md) for verification and limitations.
 
 Open **http://127.0.0.1:8080/lens/**. Local password: `contract-demo`, unless
 overridden using `GRADIO_PASSWORD`. The advanced Gradio interface remains at
@@ -33,13 +46,15 @@ document text and retrieved evidence to Bedrock. Use public or synthetic documen
 for this prototype. To explicitly run the legacy offline engine, set both
 `MODEL_REVIEW_ENABLED=false BEDROCK_ENABLED=false` when launching.
 
-Local generated artifacts are excluded from Git:
+The following release artifacts are shared; other generated files stay ignored:
 
-- `artifacts/knowledge/federal.sqlite`: official source snapshots indexed for
+- `artifacts/knowledge/federal-v2.sqlite` (LFS): official source snapshots indexed for
   full-text retrieval, with commit versions, content hashes and reference links.
-- `artifacts/models/`: trained weights, attribution, split provenance and measured
-  evaluation results. `selected.json`, when present, selects the validated model.
-- `ml/data/`: downloaded CUAD and document-disjoint training/validation/test data.
+- `artifacts/models/legal-bert-cuad/`: completed trained weights (LFS), tokenizer,
+  configuration, attribution, provenance and measured evaluation results.
+  `artifacts/models/selected.json` selects this completed baseline; comparison
+  metrics are also included. Experimental candidates/checkpoints are not shared.
+- `ml/data/` remains excluded: downloaded CUAD and training/validation/test data.
 
 Rebuild source data with official GSA FAR/DFARS clones under
 `artifacts/sources/far` and `artifacts/sources/dfars`, then run

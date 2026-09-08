@@ -18,8 +18,8 @@ def main():
         gradio_password="local-smoke-password",
         demo_jwt_secret="local-smoke-signing-secret-32-characters",
         bedrock_enabled=True, model_review_enabled=True, bedrock_timeout_seconds=120,
-        classifier_model_dir=os.getenv("CLASSIFIER_MODEL_DIR", "artifacts/models/cuad-linear"),
-        local_corpus_path="artifacts/knowledge/federal.sqlite",
+        classifier_model_dir=os.getenv("CLASSIFIER_MODEL_DIR", "artifacts/models/legal-bert-cuad"),
+        local_corpus_path=os.getenv("LOCAL_CORPUS_PATH", "artifacts/knowledge/federal-v2.sqlite"),
     )
     document = DocumentParser(settings).parse("sample.docx", sample_contract_bytes())
     report = ModelReviewService(settings).review(document, sample_metadata())

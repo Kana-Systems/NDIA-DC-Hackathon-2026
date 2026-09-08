@@ -1,0 +1,7 @@
+{
+  "negative_windows_per_positive": 1,
+  "schema_version": "1.0",
+  "strategy": "answer_centered_positive_sliding_negative",
+  "stride_chars": 900,
+  "window_chars": 1800
+}

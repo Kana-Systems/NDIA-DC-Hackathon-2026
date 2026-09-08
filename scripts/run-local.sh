@@ -13,7 +13,7 @@ export DEMO_JWT_SECRET="${DEMO_JWT_SECRET:-$(.venv/bin/python -c 'import secrets
 export BEDROCK_ENABLED="${BEDROCK_ENABLED:-true}"
 export MODEL_REVIEW_ENABLED="${MODEL_REVIEW_ENABLED:-true}"
 export BEDROCK_TIMEOUT_SECONDS="${BEDROCK_TIMEOUT_SECONDS:-120}"
-export LOCAL_CORPUS_PATH="${LOCAL_CORPUS_PATH:-$project_dir/artifacts/knowledge/federal.sqlite}"
+export LOCAL_CORPUS_PATH="${LOCAL_CORPUS_PATH:-$project_dir/artifacts/knowledge/federal-v2.sqlite}"
 if [[ -z "${CLASSIFIER_MODEL_DIR:-}" ]]; then
   export MODEL_SELECTION_PATH="$project_dir/artifacts/models/selected.json"
 fi
