@@ -687,6 +687,7 @@ resource "aws_ecs_task_definition" "app" {
     name      = "app"
     image     = var.image_uri
     essential = true
+    user      = "0"
     command   = ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", tostring(var.container_port), "--no-access-log"]
     portMappings = [{
       containerPort = var.container_port

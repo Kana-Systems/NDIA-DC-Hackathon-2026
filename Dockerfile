@@ -18,8 +18,11 @@ COPY app ./app
 COPY ingestion ./ingestion
 COPY ml ./ml
 COPY knowledge ./knowledge
-RUN chown -R app:app /srv/app
+COPY docker-entrypoint.py /usr/local/bin/app-entrypoint
+RUN chown -R app:app /srv/app && chmod 0555 /usr/local/bin/app-entrypoint
+
 USER app
+ENTRYPOINT ["python", "/usr/local/bin/app-entrypoint"]
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

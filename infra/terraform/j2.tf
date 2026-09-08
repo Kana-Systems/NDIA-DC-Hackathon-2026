@@ -389,6 +389,7 @@ resource "aws_ecs_task_definition" "fixture_ingestion" {
     name      = "fixture-ingestion"
     image     = var.image_uri
     essential = true
+    user      = "0"
     command   = ["python", "-m", "ingestion.cli"]
     environment = concat(local.j2_environment, [
       { name = "HOME", value = "/tmp/home" },
@@ -447,6 +448,7 @@ resource "aws_ecs_task_definition" "graph_ingestion" {
     name        = "graph-ingestion"
     image       = var.image_uri
     essential   = true
+    user        = "0"
     command     = ["python", "-m", "ingestion.graph_cli"]
     environment = concat(local.j2_environment, [{ name = "HOME", value = "/tmp/home" }])
     mountPoints = [{

@@ -49,7 +49,7 @@ jobs:
           for path in app evaluation ingestion knowledge ml tests; do
             [[ -d "$path" ]] && paths+=("$path")
           done
-          if (( ${#paths[@]} )); then ruff check "${paths[@]}"; fi
+          ruff check docker-entrypoint.py "${paths[@]}"
 
       - name: Run tests
         shell: bash
@@ -394,6 +394,9 @@ jobs:
               + " containerReason=\($container.reason // "none")"
           ' <<<"$task_result"
 
+          task_id="${task_arn##*/}"
+          log_group="/ecs/${cluster}"
+          log_stream="fixture-ingestion/fixture-ingestion/${task_id}"
           if ! jq -e '
             ((.failures // []) | length == 0)
             and (.tasks | length == 1)
@@ -402,13 +405,16 @@ jobs:
               .name == "fixture-ingestion" and .exitCode == 0
             )
           ' <<<"$task_result" >/dev/null; then
+            aws logs get-log-events \
+              --region "$AWS_REGION" \
+              --log-group-name "$log_group" \
+              --log-stream-name "$log_stream" \
+              --query 'events[].message' \
+              --output text >&2 || true
             echo "Fixture ingestion task failed." >&2
             exit 1
           fi
 
-          task_id="${task_arn##*/}"
-          log_group="/ecs/${cluster}"
-          log_stream="fixture-ingestion/fixture-ingestion/${task_id}"
           summary=""
           for _ in {1..10}; do
             messages="$(
