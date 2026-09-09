@@ -71,9 +71,11 @@ resource "aws_iam_role_policy" "classifier_deploy" {
         "sagemaker:AddTags", "sagemaker:ListTags", "sagemaker:DeleteTags",
         "sagemaker:InvokeEndpoint",
       ]
+      # Refresh and cleanup must retain access to pre-migration model/config
+      # names, while invocation remains scoped to the active endpoint.
       Resource = [
-        "arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:model/${local.managed_classifier_endpoint_name}-*",
-        "arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint-config/${local.managed_classifier_endpoint_name}-*",
+        "arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:model/${local.name}-llama-cuad-*",
+        "arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint-config/${local.name}-llama-cuad-*",
         "arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint/${local.managed_classifier_endpoint_name}",
       ]
     }]

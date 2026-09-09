@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import sys
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pytest
@@ -197,8 +198,34 @@ def test_classifier_reuse_tracks_build_inputs_and_deploy_policy_is_scoped() -> N
     ):
         assert f'"sagemaker:{action}"' in grant
     assert '"sagemaker:*"' not in grant
-    for resource in ("model", "endpoint-config", "endpoint"):
-        assert f":{resource}/${{local.managed_classifier_endpoint_name}}" in grant
+    replacements = {
+        "data.aws_partition.current.partition": "aws-us-gov",
+        "var.aws_region": "us-gov-west-1",
+        "data.aws_caller_identity.current.account_id": "123456789012",
+        "local.name": "contract-review-demo",
+        "local.managed_classifier_endpoint_name": "contract-review-demo-llama-cuad-g6",
+    }
+    patterns = re.findall(r'"(arn:[^"\n]+)"', grant)
+    for key, value in replacements.items():
+        patterns = [pattern.replace("${" + key + "}", value) for pattern in patterns]
+    assert patterns and all("${" not in pattern for pattern in patterns)
+    arn_prefix = "arn:aws-us-gov:sagemaker:us-gov-west-1:123456789012:"
+    # Terraform refreshes old resources before it can create replacements.
+    for resource in ("model", "endpoint-config"):
+        for name in (
+            "contract-review-demo-llama-cuad-abc",
+            "contract-review-demo-llama-cuad-g6-abc",
+        ):
+            assert any(fnmatchcase(f"{arn_prefix}{resource}/{name}", p) for p in patterns)
+        assert not any(
+            fnmatchcase(f"{arn_prefix}{resource}/another-project-abc", p) for p in patterns
+        )
+    assert any(
+        fnmatchcase(f"{arn_prefix}endpoint/contract-review-demo-llama-cuad-g6", p) for p in patterns
+    )
+    assert not any(
+        fnmatchcase(f"{arn_prefix}endpoint/contract-review-demo-llama-cuad", p) for p in patterns
+    )
 
 
 def test_deployment_fetches_lfs_and_enables_model_review() -> None:
