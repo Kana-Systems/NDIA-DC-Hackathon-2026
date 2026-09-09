@@ -48,9 +48,7 @@ PINNED_CANDIDATES: tuple[dict[str, Any], ...] = (
         "license": "cc-by-sa-4.0",
         "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
         "model_card_url": "https://huggingface.co/nlpaueb/legal-bert-base-uncased",
-        "metadata_api_url": (
-            "https://huggingface.co/api/models/nlpaueb/legal-bert-base-uncased"
-        ),
+        "metadata_api_url": ("https://huggingface.co/api/models/nlpaueb/legal-bert-base-uncased"),
         "metadata_checked_at": "2026-09-08",
         "source_url": (
             "https://huggingface.co/nlpaueb/legal-bert-base-uncased/tree/"
@@ -97,12 +95,9 @@ PINNED_CANDIDATES: tuple[dict[str, Any], ...] = (
         "revision": "ae93d346c3037d15193c4d0266cda2cae50fec09",
         "license": "apache-2.0",
         "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
-        "model_card_url": (
-            "https://huggingface.co/ai-law-society-lab/CaseLawModernBERT-large"
-        ),
+        "model_card_url": ("https://huggingface.co/ai-law-society-lab/CaseLawModernBERT-large"),
         "metadata_api_url": (
-            "https://huggingface.co/api/models/"
-            "ai-law-society-lab/CaseLawModernBERT-large"
+            "https://huggingface.co/api/models/ai-law-society-lab/CaseLawModernBERT-large"
         ),
         "metadata_checked_at": "2026-09-08",
         "source_url": (
@@ -282,6 +277,14 @@ def _validate_candidate(candidate: Any) -> str:
         raise ValueError(f"{name} positive_weight_cap must be in [1, 20]")
     if not isinstance(candidate.get("gradient_checkpointing"), bool):
         raise ValueError(f"{name} gradient_checkpointing must be boolean")
+    extra_args = candidate.get("extra_args", [])
+    if extra_args is None:
+        extra_args = []
+        candidate["extra_args"] = extra_args
+    if not isinstance(extra_args, list) or not all(
+        isinstance(item, str) and item.strip() for item in extra_args
+    ):
+        raise ValueError(f"{name} extra_args must be a list of non-empty strings")
     return name
 
 
@@ -456,9 +459,7 @@ def build_schedule(
     for stage in config["screens"]:
         schedule.extend(runs_for_stage(config, stage, current, parent_stage))
         current = list(rankings.get(str(stage["name"]), current))
-        current = current[
-            : _keep_count(stage, len(current), int(config["finalist_count"]))
-        ]
+        current = current[: _keep_count(stage, len(current), int(config["finalist_count"]))]
         parent_stage = str(stage["name"])
     finalists = current[: int(config["finalist_count"])]
     schedule.extend(full_run_specs(config, finalists))
@@ -635,7 +636,21 @@ def find_latest_checkpoint(path: Path) -> Path | None:
     if path.is_dir():
         for candidate in path.iterdir():
             match = re.fullmatch(r"checkpoint-(\d+)", candidate.name)
-            if candidate.is_dir() and match:
+            has_model = any(
+                (candidate / name).is_file()
+                for name in (
+                    "model.safetensors",
+                    "pytorch_model.bin",
+                    "adapter_model.safetensors",
+                    "adapter_model.bin",
+                )
+            )
+            if (
+                candidate.is_dir()
+                and match
+                and (candidate / "trainer_state.json").is_file()
+                and has_model
+            ):
                 checkpoints.append((int(match.group(1)), candidate))
     return max(checkpoints, default=(0, None), key=lambda item: item[0])[1]
 
@@ -664,6 +679,14 @@ def build_manifest(
     code_paths = {
         "ml/train.py": ROOT / "ml/train.py",
         "ml/improvement_data.py": ROOT / "ml/improvement_data.py",
+        "ml/inference.py": ROOT / "ml/inference.py",
+        "ml/heuristic.py": ROOT / "ml/heuristic.py",
+        "ml/windowing.py": ROOT / "ml/windowing.py",
+        "ml/splits.py": ROOT / "ml/splits.py",
+        "ml/cuad_category_domain_mapping.json": ROOT / "ml/cuad_category_domain_mapping.json",
+        "ml/CUAD_ATTRIBUTION.md": ROOT / "ml/CUAD_ATTRIBUTION.md",
+        "ml/PRETRAINED_ATTRIBUTION.md": ROOT / "ml/PRETRAINED_ATTRIBUTION.md",
+        "ml/LLAMA_3_1_NOTICE.txt": ROOT / "ml/LLAMA_3_1_NOTICE.txt",
         "ml/runpod_matrix.py": ROOT / "ml/runpod_matrix.py",
         "scripts/improve-models.py": ROOT / "scripts/improve-models.py",
         "ml/requirements-training-gpu.txt": ROOT / "ml/requirements-training-gpu.txt",
@@ -728,6 +751,24 @@ def build_manifest(
             ),
         },
     }
+
+
+def verify_manifest_inputs(manifest: Mapping[str, Any], training_dir: Path) -> None:
+    """Fail closed if code or data changes after the matrix fingerprint is frozen."""
+
+    mismatches = []
+    for name, expected in manifest.get("code_sha256", {}).items():
+        path = ROOT / name
+        actual = sha256_file(path) if path.is_file() else None
+        if actual != expected:
+            mismatches.append(name)
+    for name, expected in manifest.get("training_data_sha256", {}).items():
+        path = training_dir / name
+        actual = sha256_file(path) if path.is_file() else None
+        if actual != expected:
+            mismatches.append(f"training-data/{name}")
+    if mismatches:
+        raise RuntimeError("matrix inputs changed after launch: " + ", ".join(sorted(mismatches)))
 
 
 def initialize_state(
@@ -905,12 +946,11 @@ class MatrixRunner:
         }
 
     def _parent_checkpoint(self, spec: RunSpec) -> Path | None:
-        own = find_latest_checkpoint(self._run_paths(spec)["checkpoint"])
-        if own:
-            return own
-        if spec.parent_run_id:
-            return find_latest_checkpoint(self.checkpoint_root / spec.parent_run_id)
-        return None
+        # Resume only an interrupted attempt of this exact run. Hugging Face
+        # checkpoints include TrainerState and early-stopping callback state;
+        # carrying those across fidelity stages can stop the next stage after
+        # its first evaluation and invalidates successive-stage comparisons.
+        return find_latest_checkpoint(self._run_paths(spec)["checkpoint"])
 
     def _command(self, spec: RunSpec, resume: Path | None) -> tuple[list[str], dict[str, str]]:
         candidate = candidate_map(self.config)[spec.candidate]
@@ -990,6 +1030,7 @@ class MatrixRunner:
             command.append("--deterministic")
         if candidate["gradient_checkpointing"]:
             command.append("--gradient-checkpointing")
+        command.extend(str(item) for item in candidate.get("extra_args") or [])
         if resume:
             command.extend(["--resume-from-checkpoint", str(resume)])
         return command, single_gpu_environment(self.gpu, spec.seed)
@@ -1015,10 +1056,7 @@ class MatrixRunner:
         ):
             raise ValueError("artifact provenance differs from this matrix run")
         weights = model_dir / "model.safetensors"
-        if (
-            not weights.is_file()
-            or provenance.get("weights_sha256") != sha256_file(weights)
-        ):
+        if not weights.is_file() or provenance.get("weights_sha256") != sha256_file(weights):
             raise ValueError("artifact weights do not match their recorded hash")
         return metric
 
@@ -1108,9 +1146,7 @@ class MatrixRunner:
                 stderr=subprocess.STDOUT,
                 start_new_session=os.name != "nt",
             )
-            self.state["runs"][spec.run_id].update(
-                {"pid": process.pid, "host": platform.node()}
-            )
+            self.state["runs"][spec.run_id].update({"pid": process.pid, "host": platform.node()})
             self._save()
             timed_out = False
             try:
@@ -1166,6 +1202,7 @@ class MatrixRunner:
         )
 
     def _run_one(self, spec: RunSpec) -> bool:
+        verify_manifest_inputs(self.manifest, self.training_dir)
         existing = self.state["runs"].get(spec.run_id, {})
         if existing.get("status") == "complete":
             try:
@@ -1319,6 +1356,7 @@ class MatrixRunner:
             if row.get("status") == "complete":
                 by_candidate[spec.candidate].append(float(row["validation_metric"]))
         aggregate = []
+        expected_seeds = len(self.config["seeds"])
         for candidate, values in by_candidate.items():
             if len(values) > 1:
                 validation_stdev = statistics.pstdev(values)
@@ -1326,17 +1364,21 @@ class MatrixRunner:
                 validation_stdev = 0.0
             else:
                 validation_stdev = None
+            seeds_complete = len(values) == expected_seeds
             aggregate.append(
                 {
                     "candidate": candidate,
                     "completed_seeds": len(values),
-                    "expected_seeds": len(self.config["seeds"]),
-                    "validation_mean": statistics.fmean(values) if values else None,
+                    "expected_seeds": expected_seeds,
+                    "seeds_complete": seeds_complete,
+                    "validation_mean": (statistics.fmean(values) if seeds_complete else None),
+                    "partial_validation_mean": (statistics.fmean(values) if values else None),
                     "validation_stdev": validation_stdev,
                 }
             )
         aggregate.sort(
             key=lambda row: (
+                not row["seeds_complete"],
                 -(row["validation_mean"] if row["validation_mean"] is not None else -math.inf),
                 row["candidate"],
             )

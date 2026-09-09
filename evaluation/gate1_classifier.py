@@ -13,7 +13,7 @@ from typing import Any
 GATE1_THRESHOLDS = {
     "paired_delta_lower_95": 0.0,
     "micro_precision": 0.80,
-    "micro_recall": 0.75,
+    "micro_recall": 0.80,
     "macro_f1": 0.50,
 }
 DEFAULT_CRITICAL_LABELS = (
@@ -67,15 +67,9 @@ def _supported_from_metadata(
         return bool(value["supported"])
     windows = value.get("positive_windows", value.get("support"))
     documents = value.get("positive_documents")
-    windows_supported = (
-        isinstance(windows, Real) and windows >= minimum_positive_windows
-    )
-    documents_supported = (
-        documents is None
-        or (
-            isinstance(documents, Real)
-            and documents >= minimum_positive_documents
-        )
+    windows_supported = isinstance(windows, Real) and windows >= minimum_positive_windows
+    documents_supported = documents is None or (
+        isinstance(documents, Real) and documents >= minimum_positive_documents
     )
     return windows_supported and documents_supported
 
@@ -106,7 +100,7 @@ def _threshold_checks(
             _finite_metric(candidate_metrics, "micro_recall", "recall"),
             GATE1_THRESHOLDS["micro_recall"],
             False,
-            "Candidate micro recall is below 0.75",
+            "Candidate micro recall is below 0.80",
         ),
         (
             "macro_f1",
@@ -293,8 +287,7 @@ def evaluate_gate1(
     )
     if regressions:
         blockers.append(
-            "Candidate regresses supported critical labels: "
-            + ", ".join(sorted(regressions))
+            "Candidate regresses supported critical labels: " + ", ".join(sorted(regressions))
         )
 
     passed = all(check["passed"] for check in checks.values())
@@ -306,9 +299,7 @@ def evaluate_gate1(
         "recommendation": "pass" if passed else "fail",
         "thresholds": {
             **GATE1_THRESHOLDS,
-            "calibration": (
-                "Brier and ECE non-regression with strict improvement in at least one"
-            ),
+            "calibration": ("Brier and ECE non-regression with strict improvement in at least one"),
             "critical_label_minimum_positive_windows": minimum_positive_windows,
             "critical_label_minimum_positive_documents": minimum_positive_documents,
             "critical_label_regression_tolerance": regression_tolerance,

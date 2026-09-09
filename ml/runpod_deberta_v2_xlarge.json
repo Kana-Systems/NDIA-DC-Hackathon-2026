@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "selection_metric": "eval_micro_f1",
+  "finalist_count": 2,
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "execution": {
+    "gpus_per_run": 1,
+    "max_concurrent_runs": 1,
+    "deterministic": true,
+    "precision": "auto"
+  },
+  "candidates": [
+    {
+      "name": "deberta-v2-xlarge",
+      "model_name": "microsoft/deberta-v2-xlarge",
+      "revision": "1d134961d4db8e7e8eb1bc1ab81cb370244c57f7",
+      "license": "mit",
+      "license_url": "https://opensource.org/license/mit/",
+      "model_card_url": "https://huggingface.co/microsoft/deberta-v2-xlarge",
+      "metadata_api_url": "https://huggingface.co/api/models/microsoft/deberta-v2-xlarge",
+      "metadata_checked_at": "2026-09-08",
+      "source_url": "https://huggingface.co/microsoft/deberta-v2-xlarge/tree/1d134961d4db8e7e8eb1bc1ab81cb370244c57f7",
+      "license_source_url": "https://huggingface.co/microsoft/deberta-v2-xlarge/blob/1d134961d4db8e7e8eb1bc1ab81cb370244c57f7/README.md",
+      "positive_weight_cap": 1.0,
+      "learning_rate": 5e-06,
+      "batch_size": 64,
+      "gradient_accumulation_steps": 1,
+      "gradient_checkpointing": false,
+      "max_length": 512
+    },
+    {
+      "name": "caselaw-modernbert-large-b300",
+      "model_name": "ai-law-society-lab/CaseLawModernBERT-large",
+      "revision": "ae93d346c3037d15193c4d0266cda2cae50fec09",
+      "license": "apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "model_card_url": "https://huggingface.co/ai-law-society-lab/CaseLawModernBERT-large",
+      "metadata_api_url": "https://huggingface.co/api/models/ai-law-society-lab/CaseLawModernBERT-large",
+      "metadata_checked_at": "2026-09-08",
+      "source_url": "https://huggingface.co/ai-law-society-lab/CaseLawModernBERT-large/tree/ae93d346c3037d15193c4d0266cda2cae50fec09",
+      "license_source_url": "https://huggingface.co/ai-law-society-lab/CaseLawModernBERT-large/blob/ae93d346c3037d15193c4d0266cda2cae50fec09/README.md",
+      "positive_weight_cap": 1.0,
+      "learning_rate": 1e-05,
+      "batch_size": 128,
+      "gradient_accumulation_steps": 1,
+      "gradient_checkpointing": false,
+      "max_length": 512
+    }
+  ],
+  "smoke": {
+    "name": "smoke",
+    "epochs": 1.0,
+    "max_steps": 12,
+    "eval_steps": 6,
+    "keep_count": 2,
+    "early_stopping_patience": 1
+  },
+  "screens": [
+    {
+      "name": "screen-xlarge",
+      "epochs": 1.0,
+      "max_steps": 96,
+      "eval_steps": 48,
+      "keep_count": 2,
+      "early_stopping_patience": 1
+    }
+  ],
+  "full": {
+    "name": "full",
+    "epochs": 2.0,
+    "max_steps": -1,
+    "eval_steps": 50,
+    "early_stopping_patience": 2
+  },
+  "optimizer": {
+    "warmup_ratio": 0.1,
+    "weight_decay": 0.01
+  }
+}

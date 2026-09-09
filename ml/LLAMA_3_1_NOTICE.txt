@@ -1,0 +1,11 @@
+Llama 3.1 is licensed under the Llama 3.1 Community License,
+Copyright (c) Meta Platforms, Inc. All Rights Reserved.
+
+License:
+https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE
+
+Acceptable Use Policy:
+https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/USE_POLICY.md
+
+This derivative is supervised multi-label fine-tuning on public CUAD clause
+windows. It is an experimental classifier, not a legal determination.

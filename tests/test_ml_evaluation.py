@@ -9,7 +9,7 @@ from ml.heuristic import HeuristicClassifier
 from ml.inference import TransformerClassifier, input_fn, output_fn, predict_fn
 from ml.launch_sagemaker import estimator_kwargs, validate_config
 from ml.metrics import multilabel_metrics
-from ml.preprocess_cuad import cuad_category, examples, split
+from ml.preprocess_cuad import cuad_category, examples, labels_for_bounds, split
 from ml.train import (
     apply_window_config,
     build_parser,
@@ -17,12 +17,30 @@ from ml.train import (
     load_window_config,
     package_artifacts,
     training_api_kwargs,
+    tuned_micro_f1,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class MlEvaluationTests(unittest.TestCase):
+    def test_training_and_full_contract_windows_share_overlap_label_rule(self):
+        spans = [{"label": "termination", "start": 80, "end": 120}]
+
+        self.assertEqual(labels_for_bounds(spans, 0, 100), ["termination"])
+        self.assertEqual(labels_for_bounds(spans, 0, 99), [])
+
+    def test_tuned_micro_f1_finds_exact_global_threshold(self):
+        result = tuned_micro_f1(
+            [[2.1972246, 1.3862944, 0.8472979, -2.1972246]],
+            [[1, 0, 1, 0]],
+        )
+
+        self.assertAlmostEqual(result["micro_f1_tuned"], 0.8)
+        self.assertAlmostEqual(result["micro_f1_tuned_threshold"], 0.7)
+        self.assertAlmostEqual(result["micro_f1_tuned_precision"], 2 / 3)
+        self.assertEqual(result["micro_f1_tuned_recall"], 1.0)
+
     def test_cuad_preprocessing_and_document_split(self):
         fixture = ROOT / "tests" / "fixtures" / "ml" / "cuad_realistic.json"
         dataset = json.loads(fixture.read_text(encoding="utf-8"))
@@ -280,7 +298,11 @@ class MlEvaluationTests(unittest.TestCase):
         args = build_parser().parse_args([])
         training_kwargs = training_api_kwargs(CurrentTrainingArguments, args)
         self.assertEqual(training_kwargs["eval_strategy"], "epoch")
+        self.assertEqual(training_kwargs["metric_for_best_model"], "micro_f1")
         self.assertNotIn("evaluation_strategy", training_kwargs)
+        recall_args = build_parser().parse_args(["--metric-for-best-model", "micro_f2"])
+        recall_kwargs = training_api_kwargs(CurrentTrainingArguments, recall_args)
+        self.assertEqual(recall_kwargs["metric_for_best_model"], "micro_f2")
 
         config = validate_config(
             {

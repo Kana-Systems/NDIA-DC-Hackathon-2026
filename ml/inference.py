@@ -77,7 +77,12 @@ def model_fn(model_dir: str) -> Any:
         return HeuristicClassifier()
     try:
         import torch
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
+        from transformers import (
+            AutoConfig,
+            AutoModelForSequenceClassification,
+            AutoTokenizer,
+            pipeline,
+        )
     except ImportError as error:
         raise RuntimeError(
             "a packaged transformer model requires transformers and torch"
@@ -85,7 +90,10 @@ def model_fn(model_dir: str) -> Any:
     batch_size = int(os.getenv("MODEL_INFERENCE_BATCH_SIZE", "16"))
     if batch_size < 1:
         raise ValueError("MODEL_INFERENCE_BATCH_SIZE must be positive")
-    model = AutoModelForSequenceClassification.from_pretrained(path)
+    model_config = AutoConfig.from_pretrained(path)
+    if hasattr(model_config, "reference_compile"):
+        model_config.reference_compile = False
+    model = AutoModelForSequenceClassification.from_pretrained(path, config=model_config)
     tokenizer = AutoTokenizer.from_pretrained(path)
     predictor = pipeline(
         "text-classification",

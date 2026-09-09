@@ -14,6 +14,9 @@ from evaluation.benefit_gate import gate
 from evaluation.model_benefit import ProvisionalGrade, measure, paired_summary, validate_grade
 from ml.federal_data import validate
 from ml.full_contract_eval import prepare
+from ml.improvement_data import prepare as prepare_improvement
+from ml.preprocess_cuad import write_jsonl
+from ml.splits import is_calibration_document
 from ml.train import positive_weights
 from ml.tune_models import fit_thresholds, paired_interval, partition
 
@@ -31,6 +34,81 @@ def test_thresholds_use_supported_labels_and_document_partition():
     assert result["thresholds"]["common"] < 0.5
     assert result["thresholds"]["rare"] == result["global_threshold"]
     assert result["support"]["rare"]["positive_documents"] == 2
+    assert result["precision_floor"] == result["recall_floor"] == 0.80
+    assert "micro-F1" in result["objective"]
+
+
+def test_training_checkpoint_validation_reserves_selection_documents(tmp_path):
+    source = tmp_path / "comparison"
+    output = tmp_path / "improvement"
+    source.mkdir()
+    validation = [
+        {
+            "document_id": f"validation-{index}",
+            "text": f"validation text {index}",
+            "labels": ["payment"] if index % 2 else [],
+        }
+        for index in range(20)
+    ]
+    assert any(is_calibration_document(row["document_id"]) for row in validation)
+    assert any(not is_calibration_document(row["document_id"]) for row in validation)
+    write_jsonl(
+        source / "train.jsonl",
+        [{"document_id": "training-contract", "text": "Payment terms", "labels": ["payment"]}],
+    )
+    write_jsonl(source / "validation.jsonl", validation)
+    write_jsonl(
+        source / "test.jsonl",
+        [{"document_id": "test-contract", "text": "Test text", "labels": []}],
+    )
+    (source / "labels.json").write_text('["payment"]\n')
+    (source / "window_config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "strategy": "answer_centered_positive_sliding_negative",
+                "window_chars": 1800,
+                "stride_chars": 900,
+                "negative_windows_per_positive": 1,
+            }
+        )
+    )
+    (source / "cuad_category_domain_mapping.json").write_text("{}\n")
+    raw = tmp_path / "CUAD_v1.json"
+    raw.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "title": "training-contract",
+                        "paragraphs": [
+                            {
+                                "context": "Payment terms",
+                                "qas": [
+                                    {
+                                        "id": "training-contract__Payment",
+                                        "question": "Payment",
+                                        "answers": [{"answer_start": 0, "text": "Payment"}],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+    )
+
+    manifest = prepare_improvement(source, output, raw)
+    checkpoint_rows = [
+        json.loads(line) for line in (output / "validation.jsonl").read_text().splitlines()
+    ]
+
+    assert checkpoint_rows
+    assert all(is_calibration_document(row["document_id"]) for row in checkpoint_rows)
+    assert manifest["checkpoint_validation_documents"] > 0
+    assert manifest["selection_validation_documents_reserved"] > 0
+    assert manifest["checkpoint_validation_is_document_disjoint_from_selection"] is True
 
 
 def test_positive_weights_are_bounded_and_no_reweighting_is_identity():
