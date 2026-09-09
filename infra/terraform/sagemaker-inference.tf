@@ -71,8 +71,10 @@ resource "aws_sagemaker_model" "classifier" {
 resource "aws_sagemaker_endpoint_configuration" "classifier" {
   count = local.classifier_endpoint_enabled ? 1 : 0
 
-  name        = "${local.managed_classifier_endpoint_name}-${local.classifier_model_revision}"
-  kms_key_arn = aws_kms_key.j2.arn
+  # G6e uses fixed local NVMe instance storage. SageMaker does not accept
+  # customer-managed EBS volume size or KMS settings for this instance family;
+  # the NVMe device is encrypted in hardware with per-instance keys.
+  name = "${local.managed_classifier_endpoint_name}-${local.classifier_model_revision}"
 
   production_variants {
     variant_name                                      = "AllTraffic"
@@ -82,7 +84,6 @@ resource "aws_sagemaker_endpoint_configuration" "classifier" {
     initial_variant_weight                            = 1
     container_startup_health_check_timeout_in_seconds = 1800
     model_data_download_timeout_in_seconds            = 1800
-    volume_size_in_gb                                 = 80
   }
 
   lifecycle {

@@ -408,9 +408,10 @@ document-disjoint selection result was 78.55% micro-F1, 83.22% precision, and
 SHA-256-addressed `CLASSIFIER_MODEL_DATA_URL` deployment secret makes Terraform
 create one network-isolated `ml.g6e.xlarge` SageMaker endpoint and makes ECS call
 it through least-privilege IAM. The deployment builds a private, digest-pinned
-inference image. The endpoint returns classifier candidates to the existing
-retrieval and Terra prompts; those candidates remain non-authoritative and are
-never treated as legal findings.
+inference image. The artifact remains KMS-encrypted in S3; G6e's fixed local
+NVMe storage is hardware-encrypted with per-instance keys. The endpoint returns
+classifier candidates to the existing retrieval and Terra prompts; those
+candidates remain non-authoritative and are never treated as legal findings.
 
 The reviewed object URI is recorded in
 `ml/deployment/llama_r128_ensemble_artifact.json`. Set the secret to the exact

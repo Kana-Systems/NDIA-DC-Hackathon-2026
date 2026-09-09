@@ -152,6 +152,25 @@ jobs:
           jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' \
             <<<"$TF_VAR_allowed_ingress_cidrs" >/dev/null
 
+      - name: Reclaim disk for classifier image
+        if: env.TF_VAR_classifier_model_data_url != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/.ghcup \
+            /usr/local/lib/android \
+            /usr/local/share/boost \
+            /usr/share/dotnet
+          docker system prune --all --force
+          available_kib="$(df --output=avail -k / | awk 'NR == 2 { print $1 }')"
+          [[ "$available_kib" =~ ^[0-9]+$ ]]
+          (( available_kib >= 28 * 1024 * 1024 ))
+          df -h /
+
       - name: Configure GovCloud credentials
         uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:

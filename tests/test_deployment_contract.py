@@ -43,11 +43,16 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     assert "TF_VAR_classifier_model_data_url" in workflow
     assert "Verify pinned classifier artifact" in workflow
     assert "aws s3api head-object" in workflow
+    assert "Reclaim disk for classifier image" in workflow
+    assert "available_kib >= 28 * 1024 * 1024" in workflow
     assert "Dockerfile.sagemaker" in workflow
     assert "sagemaker-runtime invoke-endpoint" in workflow
     assert "enable_network_isolation = true" in endpoint
     assert "instance_type" in endpoint
     assert "var.classifier_endpoint_instance_type" in endpoint
+    assert "volume_size_in_gb" not in endpoint
+    assert "kms_key_arn" not in endpoint
+    assert "NVMe device is encrypted in hardware" in endpoint
     assert "transformers==4.57.6" in image
     assert "@sha256:" in image
     assert thresholds["model_id"] == "Llama-3.1-CUAD-r128-ensemble-3seed"
