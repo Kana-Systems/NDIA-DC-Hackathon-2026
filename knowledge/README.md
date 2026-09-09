@@ -41,7 +41,7 @@ the `HEAD` and `PUT` is detected safely.
 
 `--skip-create` targets an index managed elsewhere and bypasses both `HEAD` and
 `PUT`; only the bulk upsert is sent. Transport failures expose only the request
-method, index path, and HTTP status—not AWS credentials or response bodies.
+method, index path, and HTTP status. AWS credentials and response bodies are excluded.
 
 With `--embed`, each record is enriched through Amazon Titan Text Embeddings V2
 (`amazon.titan-embed-text-v2:0`) using normalized 1024-dimensional vectors.

@@ -613,6 +613,9 @@ update; no registry write access is granted.
 The classifier runtime is reused by an immutable ECR tag derived from
 `Dockerfile.sagemaker`, so UI/documentation updates do not rebuild its large
 base image. Changing the Dockerfile builds a new runtime. The deployment
+retention policy keeps the latest three classifier runtimes separately from
+ordinary application images so frequent UI releases do not evict the runtime.
+The deployment
 contract test requires updating the cache design if build-context inputs are
 introduced. Terraform separately grants the GitHub deployment role
 `iam:PassRole` for the exact classifier execution role, with

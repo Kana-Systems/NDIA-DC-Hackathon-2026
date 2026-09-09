@@ -191,7 +191,18 @@ resource "aws_ecr_lifecycle_policy" "app" {
   repository = aws_ecr_repository.app.name
   policy = jsonencode({
     rules = [{
+      # Reused classifier runtimes must survive frequent application releases.
       rulePriority = 1
+      description  = "Retain the latest 3 classifier runtimes"
+      selection = {
+        tagStatus     = "tagged"
+        tagPrefixList = ["classifier-"]
+        countType     = "imageCountMoreThan"
+        countNumber   = 3
+      }
+      action = { type = "expire" }
+      }, {
+      rulePriority = 2
       description  = "Retain the latest 20 images"
       selection = {
         tagStatus   = "any"
