@@ -162,3 +162,8 @@ output "sagemaker_submitter_policy_arn" {
   description = "Policy to attach to an approved developer identity that submits training jobs."
   value       = aws_iam_policy.sagemaker_submitter.arn
 }
+
+output "classifier_endpoint_name" {
+  description = "Private SageMaker classifier endpoint used by the application, or null when the packaged rollback is active."
+  value       = local.effective_classifier_endpoint_name == "" ? null : local.effective_classifier_endpoint_name
+}

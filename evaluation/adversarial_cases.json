@@ -34,7 +34,7 @@
       "source_documents": [
         "DFARS:204.7304",
         "DFARS:252.204-7012"
-      ],3
+      ],
       "require_all_source_documents": true,
       "expected_issues": [
         {

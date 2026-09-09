@@ -9,6 +9,7 @@ from evaluation.benchmark import analyze, run
 from ml.heuristic import HeuristicClassifier
 from ml.inference import (
     TransformerClassifier,
+    TransformerEnsembleClassifier,
     _adapter_artifact_settings,
     input_fn,
     output_fn,
@@ -247,6 +248,48 @@ class MlEvaluationTests(unittest.TestCase):
         self.assertEqual(labels["termination_for_convenience"], 0.9)
         self.assertEqual(labels["ip_ownership_assignment"], 0.8)
         self.assertEqual(result["predictions"][1]["labels"], [])
+
+    def test_transformer_ensemble_averages_member_probabilities(self):
+        class FakeModel:
+            active = ""
+
+            def set_adapter(self, name):
+                self.active = name
+
+        model_state = FakeModel()
+
+        def predictor(windows, **_kwargs):
+            scores = (
+                {"termination": 0.9, "license": 0.1}
+                if model_state.active == "seed-17"
+                else {"termination": 0.3, "license": 0.9}
+            )
+            return [
+                [{"label": label, "score": score} for label, score in scores.items()]
+                for _window in windows
+            ]
+
+        model = TransformerEnsembleClassifier(
+            predictor=predictor,
+            model=model_state,
+            adapter_names=("seed-17", "seed-29"),
+            model_id="llama-ensemble",
+            label_names=("termination", "license"),
+            window_chars=100,
+            stride_chars=50,
+            tokenizer_max_length=32,
+        )
+
+        result = predict_fn({"texts": ["short contract"], "threshold": 0.5}, model)
+
+        self.assertEqual(result["predictions"][0]["model_id"], "llama-ensemble")
+        self.assertEqual(
+            result["predictions"][0]["labels"],
+            [
+                {"label": "license", "score": 0.5},
+                {"label": "termination", "score": 0.6},
+            ],
+        )
 
     def test_metrics(self):
         metrics = multilabel_metrics([["a"], ["b"]], [["a"], ["c"]])

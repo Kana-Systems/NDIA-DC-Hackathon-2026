@@ -25,7 +25,9 @@ def test_deployment_fetches_lfs_and_enables_model_review() -> None:
 
 def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     terraform = (ROOT / "infra/terraform/main.tf").read_text(encoding="utf-8")
+    endpoint = (ROOT / "infra/terraform/sagemaker-inference.tf").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    image = (ROOT / "Dockerfile.sagemaker").read_text(encoding="utf-8")
     thresholds = json.loads(
         (ROOT / "ml/deployment/llama_r128_ensemble_thresholds.json").read_text(encoding="utf-8")
     )
@@ -35,6 +37,13 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     assert "/srv/app/artifacts/models/legal-bert-cuad" in terraform
     assert "/srv/app/ml/deployment/llama_r128_ensemble_thresholds.json" in terraform
     assert "TF_VAR_classifier_endpoint_name" in workflow
+    assert "TF_VAR_classifier_model_data_url" in workflow
+    assert "Dockerfile.sagemaker" in workflow
+    assert 'enable_network_isolation = true' in endpoint
+    assert "instance_type" in endpoint
+    assert "var.classifier_endpoint_instance_type" in endpoint
+    assert "transformers==4.57.6" in image
+    assert "@sha256:" in image
     assert thresholds["model_id"] == "Llama-3.1-CUAD-r128-ensemble-3seed"
     assert thresholds["promotion_authorized"] is False
     assert len(thresholds["member_weights_sha256"]) == 3

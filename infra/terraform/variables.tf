@@ -225,6 +225,39 @@ variable "classifier_endpoint_timeout_seconds" {
   }
 }
 
+variable "classifier_model_data_url" {
+  description = "Optional immutable S3 model.tar.gz for the Terraform-managed Llama CUAD endpoint; empty creates no endpoint."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.classifier_model_data_url == "" || can(regex("^s3://contract-review-demo-training-[0-9]{12}/inference/llama-cuad-r128-ensemble-[0-9a-f]{64}\\.tar\\.gz$", var.classifier_model_data_url))
+    error_message = "classifier_model_data_url must use the deployment bucket and a SHA-256-addressed Llama ensemble archive."
+  }
+}
+
+variable "classifier_inference_image_uri" {
+  description = "Pinned AWS GovCloud Hugging Face GPU inference container."
+  type        = string
+  default     = "442386744353.dkr.ecr.us-gov-west-1.amazonaws.com/huggingface-pytorch-inference:2.6.0-transformers4.49.0-gpu-py312-cu124-ubuntu22.04"
+
+  validation {
+    condition     = var.classifier_inference_image_uri == "442386744353.dkr.ecr.us-gov-west-1.amazonaws.com/huggingface-pytorch-inference:2.6.0-transformers4.49.0-gpu-py312-cu124-ubuntu22.04"
+    error_message = "Use the reviewed AWS GovCloud Hugging Face inference image."
+  }
+}
+
+variable "classifier_endpoint_instance_type" {
+  description = "Single-GPU endpoint type for the Llama ensemble."
+  type        = string
+  default     = "ml.g6e.xlarge"
+
+  validation {
+    condition     = var.classifier_endpoint_instance_type == "ml.g6e.xlarge"
+    error_message = "The reviewed ensemble deployment is pinned to ml.g6e.xlarge."
+  }
+}
+
 variable "allowed_ingress_cidrs" {
   description = "Explicit IPv4 CIDRs allowed to reach HTTPS; no public-access default is provided."
   type        = list(string)

@@ -122,6 +122,7 @@ jobs:
       TF_VAR_create_graph_connector_secret: ${{ secrets.CREATE_GRAPH_CONNECTOR_SECRET || 'false' }}
       TF_VAR_lens_graph_secret_arn: ${{ secrets.LENS_GRAPH_SECRET_ARN || '' }}
       TF_VAR_classifier_endpoint_name: ${{ secrets.CLASSIFIER_ENDPOINT_NAME || '' }}
+      TF_VAR_classifier_model_data_url: ${{ secrets.CLASSIFIER_MODEL_DATA_URL || '' }}
       TF_VAR_domain_name: ${{ secrets.APP_DOMAIN }}
       TF_VAR_allowed_ingress_cidrs: ${{ secrets.ALLOWED_INGRESS_CIDRS_JSON }}
     permissions:
@@ -146,6 +147,7 @@ jobs:
           [[ "$TF_VAR_security_domain" =~ ^[a-z][a-z0-9-]{1,15}$ ]]
           [[ "$TF_VAR_create_graph_connector_secret" =~ ^(true|false)$ ]]
           [[ -z "$TF_VAR_classifier_endpoint_name" || "$TF_VAR_classifier_endpoint_name" =~ ^[A-Za-z0-9](-*[A-Za-z0-9]){0,62}$ ]]
+          [[ -z "$TF_VAR_classifier_model_data_url" || "$TF_VAR_classifier_model_data_url" =~ ^s3://contract-review-demo-training-[0-9]{12}/inference/llama-cuad-r128-ensemble-[0-9a-f]{64}\.tar\.gz$ ]]
           [[ "$TF_VAR_domain_name" =~ ^[a-z0-9.-]+\.[a-z]{2,}$ ]]
           jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' \
             <<<"$TF_VAR_allowed_ingress_cidrs" >/dev/null
@@ -218,6 +220,34 @@ jobs:
             --output text)"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "TF_VAR_image_uri=${REPOSITORY_URL}@${digest}" >> "$GITHUB_ENV"
+
+      - name: Build private classifier inference image
+        if: env.TF_VAR_classifier_model_data_url != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login \
+              --username AWS \
+              --password-stdin \
+              442386744353.dkr.ecr.us-gov-west-1.amazonaws.com
+          classifier_tag="${IMAGE_TAG}-classifier"
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=true \
+            --sbom=true \
+            --file Dockerfile.sagemaker \
+            --tag "${REPOSITORY_URL}:${classifier_tag}" \
+            --push .
+          repository_name="${REPOSITORY_URL##*/}"
+          digest="$(aws ecr describe-images \
+            --region "$AWS_REGION" \
+            --repository-name "$repository_name" \
+            --image-ids "imageTag=${classifier_tag}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "TF_VAR_classifier_inference_image_uri=${REPOSITORY_URL}@${digest}" >> "$GITHUB_ENV"
 
       - name: Terraform plan
         working-directory: infra/terraform

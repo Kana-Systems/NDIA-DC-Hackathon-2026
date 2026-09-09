@@ -346,6 +346,11 @@ class ModelReviewService:
                 )
             )
         all_clauses = detected + learned
+        classifier_model_id = getattr(
+            self,
+            "classifier_model_id",
+            getattr(getattr(self, "model", None), "model_id", ""),
+        )
         inventory = []
         for clause_id in dict.fromkeys(clause.clause_id for clause in all_clauses):
             clauses = [clause for clause in all_clauses if clause.clause_id == clause_id]
@@ -386,11 +391,10 @@ class ModelReviewService:
             classifier_model_ids=(
                 list(
                     dict.fromkeys(
-                        [self.classifier_model_id]
-                        + [clause.classifier_model_id for clause in learned]
+                        [classifier_model_id] + [clause.classifier_model_id for clause in learned]
                     )
                 )
-                if self.classifier_model_id
+                if classifier_model_id
                 else []
             )
             + ["deterministic-keyword-v1"],
@@ -423,13 +427,15 @@ class ModelReviewService:
         )
 
     def _classify(self, texts: list[str], threshold: float) -> list[dict[str, Any]]:
-        if self.endpoint:
+        endpoint = getattr(self, "endpoint", None)
+        if endpoint:
             self.review_trace["classifier_backend"] = "sagemaker"
-            return self.endpoint.predict(texts, threshold)
-        if self.model is None:
+            return endpoint.predict(texts, threshold)
+        model = getattr(self, "model", None)
+        if model is None:
             return []
         self.review_trace["classifier_backend"] = "packaged"
         return predict_fn(
             {"texts": texts, "threshold": threshold},
-            self.model,
+            model,
         )["predictions"]
