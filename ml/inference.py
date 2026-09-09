@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,63 @@ class TransformerClassifier:
     stride_chars: int = DEFAULT_WINDOW_STRIDE
     tokenizer_max_length: int = 512
     model_id: str = "fine-tuned-transformer"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _adapter_artifact_settings(path: Path) -> dict[str, Any]:
+    adapter_path = path / "adapter_config.json"
+    weights_path = path / "adapter_model.safetensors"
+    provenance_path = path / "training_provenance.json"
+    mapping_path = path / "label_mapping.json"
+    required = (adapter_path, weights_path, provenance_path, mapping_path)
+    missing = [item.name for item in required if not item.is_file()]
+    if missing:
+        raise RuntimeError(f"incomplete LoRA adapter artifact: missing {', '.join(missing)}")
+
+    adapter = json.loads(adapter_path.read_text(encoding="utf-8"))
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+    base = provenance.get("base_model_provenance", {})
+    base_model = base.get("model_id")
+    revision = base.get("exact_revision")
+    if not isinstance(base_model, str) or not base_model.strip():
+        raise RuntimeError("LoRA adapter provenance requires a base model ID")
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+        raise RuntimeError("LoRA adapter provenance requires an immutable base revision")
+    if base.get("resolved_revision") != revision:
+        raise RuntimeError("LoRA adapter base revision does not match its resolved revision")
+    if adapter.get("base_model_name_or_path") != base_model:
+        raise RuntimeError("LoRA adapter config and provenance name different base models")
+    adapter_revision = adapter.get("revision")
+    if adapter_revision not in (None, revision):
+        raise RuntimeError("LoRA adapter config and provenance name different revisions")
+    if provenance.get("artifact_type") != "lora_adapter":
+        raise RuntimeError("LoRA adapter provenance has the wrong artifact type")
+    if provenance.get("weights_file") != weights_path.name:
+        raise RuntimeError("LoRA adapter provenance has the wrong weights filename")
+    if provenance.get("weights_sha256") != _sha256(weights_path):
+        raise RuntimeError("LoRA adapter weights do not match their recorded hash")
+
+    label_to_id = mapping.get("label2id")
+    id_to_label = mapping.get("id2label")
+    if not isinstance(label_to_id, dict) or not label_to_id:
+        raise RuntimeError("LoRA adapter requires a non-empty label mapping")
+    expected_id_to_label = {str(index): label for label, index in label_to_id.items()}
+    if id_to_label != expected_id_to_label:
+        raise RuntimeError("LoRA adapter label mappings are inconsistent")
+    return {
+        "base_model": base_model,
+        "revision": revision,
+        "label2id": label_to_id,
+        "id2label": {int(index): label for index, label in id_to_label.items()},
+    }
 
 
 def _artifact_settings(path: Path) -> dict[str, Any]:
@@ -73,7 +132,12 @@ def model_fn(model_dir: str) -> Any:
         from ml.linear import LinearClassifier
 
         return LinearClassifier(path)
-    if not (path / "config.json").exists():
+    has_adapter_config = (path / "adapter_config.json").is_file()
+    has_adapter_weights = (path / "adapter_model.safetensors").is_file()
+    if has_adapter_config != has_adapter_weights:
+        raise RuntimeError("incomplete LoRA adapter artifact")
+    is_adapter = has_adapter_config and has_adapter_weights
+    if not (path / "config.json").exists() and not is_adapter:
         return HeuristicClassifier()
     try:
         import torch
@@ -90,11 +154,40 @@ def model_fn(model_dir: str) -> Any:
     batch_size = int(os.getenv("MODEL_INFERENCE_BATCH_SIZE", "16"))
     if batch_size < 1:
         raise ValueError("MODEL_INFERENCE_BATCH_SIZE must be positive")
-    model_config = AutoConfig.from_pretrained(path)
+    tokenizer = AutoTokenizer.from_pretrained(path)
+    adapter_settings = _adapter_artifact_settings(path) if is_adapter else None
+    if adapter_settings is not None:
+        model_config = AutoConfig.from_pretrained(
+            adapter_settings["base_model"],
+            revision=adapter_settings["revision"],
+        )
+        model_config.num_labels = len(adapter_settings["label2id"])
+        model_config.label2id = adapter_settings["label2id"]
+        model_config.id2label = adapter_settings["id2label"]
+        model_config.problem_type = "multi_label_classification"
+        model_config.pad_token_id = tokenizer.pad_token_id
+    else:
+        model_config = AutoConfig.from_pretrained(path)
     if hasattr(model_config, "reference_compile"):
         model_config.reference_compile = False
-    model = AutoModelForSequenceClassification.from_pretrained(path, config=model_config)
-    tokenizer = AutoTokenizer.from_pretrained(path)
+    if adapter_settings is not None:
+        try:
+            from peft import PeftModel
+        except ImportError as error:
+            raise RuntimeError("a packaged LoRA adapter requires peft") from error
+        dtype = (
+            torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else None
+        )
+        model = AutoModelForSequenceClassification.from_pretrained(
+            adapter_settings["base_model"],
+            revision=adapter_settings["revision"],
+            config=model_config,
+            dtype=dtype,
+            low_cpu_mem_usage=True,
+        )
+        model = PeftModel.from_pretrained(model, path)
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(path, config=model_config)
     predictor = pipeline(
         "text-classification",
         model=model,

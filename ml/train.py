@@ -13,6 +13,7 @@ import random
 import re
 import shutil
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -77,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument(
         "--metric-for-best-model",
-        choices=("micro_f1", "micro_f1_tuned", "micro_f2", "accuracy"),
+        choices=("micro_f1", "micro_f1_tuned", "micro_f2", "macro_f1", "accuracy"),
         default=None,
     )
     parser.add_argument(
@@ -112,6 +113,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lora-alpha", type=int, default=16)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument("--lora-target-modules", default=None)
+    parser.add_argument("--save-adapter-only", action="store_true")
+    parser.add_argument("--lora-init-adapter", type=Path, default=None)
+    parser.add_argument("--source-dataset", default="CUAD v1")
+    parser.add_argument("--source-license", default="CC BY 4.0")
+    parser.add_argument(
+        "--dataset-attribution-file",
+        type=Path,
+        default=MODULE_DIR / "CUAD_ATTRIBUTION.md",
+    )
+    parser.add_argument("--model-id-prefix", default=None)
     return parser
 
 
@@ -184,6 +195,57 @@ def tuned_micro_f1(logits: Any, references: Any) -> dict[str, float]:
     }
 
 
+def single_label_metrics(logits: Any, references: Any) -> dict[str, float]:
+    """Return accuracy/micro-F1 and support-aware macro metrics."""
+
+    import numpy as np
+
+    logits_array = np.asarray(logits, dtype=float)
+    references_array = np.asarray(references)
+    if logits_array.ndim != 2 or references_array.ndim != 1:
+        raise ValueError("single-label logits must be 2D and references must be 1D")
+    if logits_array.shape[0] != references_array.shape[0]:
+        raise ValueError("single-label logits and references must have matching rows")
+    if not np.all(np.isfinite(logits_array)):
+        raise ValueError("logits must be finite")
+    if references_array.size and (
+        references_array.min() < 0 or references_array.max() >= logits_array.shape[1]
+    ):
+        raise ValueError("single-label references are outside the logits label range")
+    predictions = np.argmax(logits_array, axis=-1)
+    accuracy = float((predictions == references_array).mean()) if references_array.size else 0.0
+    precision_values = []
+    recall_values = []
+    f1_values = []
+    for label in range(logits_array.shape[1]):
+        predicted = predictions == label
+        expected = references_array == label
+        true_positive = int(np.logical_and(predicted, expected).sum())
+        false_positive = int(np.logical_and(predicted, ~expected).sum())
+        false_negative = int(np.logical_and(~predicted, expected).sum())
+        precision = (
+            true_positive / (true_positive + false_positive)
+            if true_positive + false_positive
+            else 0.0
+        )
+        recall = (
+            true_positive / (true_positive + false_negative)
+            if true_positive + false_negative
+            else 0.0
+        )
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        precision_values.append(precision)
+        recall_values.append(recall)
+        f1_values.append(f1)
+    return {
+        "accuracy": accuracy,
+        "micro_f1": accuracy,
+        "macro_precision": float(np.mean(precision_values)),
+        "macro_recall": float(np.mean(recall_values)),
+        "macro_f1": float(np.mean(f1_values)),
+    }
+
+
 def load_window_config(training_dir: Path) -> dict[str, Any]:
     path = training_dir / WINDOW_CONFIG_FILE
     if path.exists():
@@ -251,10 +313,16 @@ def training_api_kwargs(training_arguments_type: type, args: argparse.Namespace)
     metric_for_best_model = getattr(args, "metric_for_best_model", None)
     if metric_for_best_model is None:
         metric_for_best_model = "micro_f1" if args.problem_type == "multi_label" else "accuracy"
-    if args.problem_type == "multi_label" and metric_for_best_model == "accuracy":
-        raise ValueError("multi-label training cannot select checkpoints by accuracy")
-    if args.problem_type == "single_label" and metric_for_best_model != "accuracy":
-        raise ValueError("single-label training must select checkpoints by accuracy")
+    if args.problem_type == "multi_label" and metric_for_best_model in {
+        "accuracy",
+        "macro_f1",
+    }:
+        raise ValueError("multi-label training must select checkpoints by a micro metric")
+    if args.problem_type == "single_label" and metric_for_best_model not in {
+        "accuracy",
+        "macro_f1",
+    }:
+        raise ValueError("single-label training must select checkpoints by accuracy or macro_f1")
     kwargs = {
         "output_dir": str(args.checkpoint_dir),
         "num_train_epochs": args.epochs,
@@ -361,6 +429,10 @@ def lora_is_enabled(args: argparse.Namespace) -> bool:
 def validate_lora_args(args: argparse.Namespace) -> None:
     if int(getattr(args, "lora_rank", 0) or 0) < 0:
         raise ValueError("lora-rank cannot be negative")
+    if getattr(args, "save_adapter_only", False) and not lora_is_enabled(args):
+        raise ValueError("save-adapter-only requires LoRA")
+    if getattr(args, "lora_init_adapter", None) and not lora_is_enabled(args):
+        raise ValueError("lora-init-adapter requires LoRA")
     if not lora_is_enabled(args):
         return
     if int(getattr(args, "lora_alpha", 16)) < 1:
@@ -426,6 +498,8 @@ def build_lora_config(args: argparse.Namespace) -> Any:
     target_modules = parse_lora_target_modules(getattr(args, "lora_target_modules", None))
     if target_modules:
         kwargs["target_modules"] = target_modules
+    if getattr(args, "revision", None):
+        kwargs["revision"] = args.revision
     return peft.LoraConfig(**kwargs)
 
 
@@ -449,10 +523,91 @@ def apply_lora(model: Any, args: argparse.Namespace) -> Any:
     return adapted
 
 
+def lora_backbone_state_dict(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Discard task heads while retaining only transferable LoRA tensors."""
+
+    transferable = {
+        key: value
+        for key, value in state.items()
+        if any(
+            marker in key
+            for marker in (
+                ".lora_A.",
+                ".lora_B.",
+                ".lora_embedding_A",
+                ".lora_embedding_B",
+            )
+        )
+    }
+    if not transferable:
+        raise ValueError("adapter contains no transferable LoRA backbone tensors")
+    return transferable
+
+
+def initialize_lora_backbone(model: Any, args: argparse.Namespace) -> dict[str, Any] | None:
+    """Initialize a fresh task head from another adapter's backbone tensors."""
+
+    source = getattr(args, "lora_init_adapter", None)
+    if source is None:
+        return None
+    source = Path(source)
+    config_path = source / "adapter_config.json"
+    weights_path = source / "adapter_model.safetensors"
+    if not config_path.is_file() or not weights_path.is_file():
+        raise FileNotFoundError(
+            f"adapter initialization requires adapter_config.json and "
+            f"adapter_model.safetensors: {source}"
+        )
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    configured_base = str(config.get("base_model_name_or_path", ""))
+    if configured_base and configured_base != args.model_name:
+        raise ValueError(
+            f"adapter base model {configured_base!r} does not match {args.model_name!r}"
+        )
+    if int(config.get("r", -1)) != int(args.lora_rank):
+        raise ValueError(
+            f"adapter rank {config.get('r')!r} does not match requested rank {args.lora_rank}"
+        )
+    source_targets = set(config.get("target_modules") or ())
+    requested_targets = set(parse_lora_target_modules(args.lora_target_modules) or ())
+    if requested_targets and source_targets != requested_targets:
+        raise ValueError(
+            f"adapter target modules {sorted(source_targets)} do not match "
+            f"{sorted(requested_targets)}"
+        )
+    safetensors_torch = importlib.import_module("safetensors.torch")
+    state = lora_backbone_state_dict(safetensors_torch.load_file(str(weights_path)))
+    peft_save = importlib.import_module("peft.utils.save_and_load")
+    result = peft_save.set_peft_model_state_dict(model, state, adapter_name="default")
+    unexpected_lora = [
+        key
+        for key in getattr(result, "unexpected_keys", ())
+        if "lora_" in key or "lora_embedding_" in key
+    ]
+    if unexpected_lora:
+        raise RuntimeError(
+            "adapter initialization produced unexpected LoRA keys: "
+            + ", ".join(sorted(unexpected_lora))
+        )
+    metadata = {
+        "source_adapter": str(source),
+        "adapter_config_sha256": file_sha256(config_path),
+        "adapter_weights_sha256": file_sha256(weights_path),
+        "transferred_tensor_count": len(state),
+        "task_heads_transferred": False,
+    }
+    provenance_path = source / "training_provenance.json"
+    if provenance_path.is_file():
+        metadata["source_provenance_sha256"] = file_sha256(provenance_path)
+    return metadata
+
+
 def save_trained_model(trainer: Any, tokenizer: Any, args: argparse.Namespace) -> None:
     model_dir = str(args.model_dir)
     model = trainer.model
-    if lora_is_enabled(args) and hasattr(model, "merge_and_unload"):
+    if lora_is_enabled(args) and getattr(args, "save_adapter_only", False):
+        model.save_pretrained(model_dir, safe_serialization=True)
+    elif lora_is_enabled(args) and hasattr(model, "merge_and_unload"):
         merged = model.merge_and_unload()
         # A single standard safetensors file keeps compatibility with the
         # fail-closed matrix verifier and the existing inference loader.
@@ -519,7 +674,12 @@ def package_artifacts(
     is_llama_derivative = (
         str(getattr(args, "base_model_license", "") or "").casefold().startswith("llama")
     )
-    model_id_prefix = "Llama-3.1-CUAD" if is_llama_derivative else "legal-encoder-cuad"
+    source_dataset = str(getattr(args, "source_dataset", "CUAD v1"))
+    source_license = str(getattr(args, "source_license", "CC BY 4.0"))
+    is_cuad_dataset = source_dataset.casefold().startswith("cuad")
+    model_id_prefix = getattr(args, "model_id_prefix", None) or (
+        "Llama-3.1-CUAD" if is_llama_derivative else "legal-encoder-cuad"
+    )
     mapping = {
         "schema_version": "1.0",
         "label2id": label_to_id,
@@ -557,9 +717,9 @@ def package_artifacts(
         "base_model_provenance": base_model,
         "model_id": f"{model_id_prefix}-prototype",
         "problem_type": args.problem_type,
-        "source_dataset": "CUAD v1",
-        "source_license": "CC BY 4.0",
-        "domain_mapping": DOMAIN_MAPPING.name,
+        "source_dataset": source_dataset,
+        "source_license": source_license,
+        "domain_mapping": DOMAIN_MAPPING.name if is_cuad_dataset else None,
         "labels": labels,
         "metrics_file": EVALUATION_METRICS_FILE,
         "windowing": window_config,
@@ -581,6 +741,8 @@ def package_artifacts(
             "gradient_checkpointing": getattr(args, "gradient_checkpointing", False),
             "precision": getattr(args, "resolved_precision", getattr(args, "precision", "auto")),
             "lora": getattr(args, "lora_metadata", None),
+            "save_adapter_only": getattr(args, "save_adapter_only", False),
+            "adapter_initialization": getattr(args, "lora_initialization", None),
         },
         "matrix_run": {
             "candidate": getattr(args, "candidate_name", None),
@@ -620,9 +782,20 @@ def package_artifacts(
         if preparation_path.is_file():
             provenance["preparation_sha256"] = file_sha256(preparation_path)
             shutil.copyfile(preparation_path, model_dir / "training_data_preparation.json")
-    weights_path = model_dir / "model.safetensors"
-    if weights_path.is_file():
+    weights_path = next(
+        (
+            model_dir / name
+            for name in ("model.safetensors", "adapter_model.safetensors")
+            if (model_dir / name).is_file()
+        ),
+        None,
+    )
+    if weights_path is not None:
         provenance["weights_sha256"] = file_sha256(weights_path)
+        provenance["weights_file"] = weights_path.name
+        provenance["artifact_type"] = (
+            "lora_adapter" if weights_path.name == "adapter_model.safetensors" else "merged_model"
+        )
         provenance["model_id"] = f"{model_id_prefix}-{provenance['weights_sha256'][:12]}"
     provenance["base_revision"] = exact_revision
     provenance["requested_revision"] = requested_revision
@@ -642,8 +815,15 @@ def package_artifacts(
         json.dumps(window_config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    shutil.copyfile(DOMAIN_MAPPING, model_dir / DOMAIN_MAPPING.name)
-    shutil.copyfile(MODULE_DIR / "CUAD_ATTRIBUTION.md", model_dir / "CUAD_ATTRIBUTION.md")
+    attribution_path = Path(
+        getattr(args, "dataset_attribution_file", MODULE_DIR / "CUAD_ATTRIBUTION.md")
+    )
+    if not attribution_path.is_file():
+        raise FileNotFoundError(f"dataset attribution file not found: {attribution_path}")
+    attribution_name = "CUAD_ATTRIBUTION.md" if is_cuad_dataset else "DATASET_ATTRIBUTION.md"
+    shutil.copyfile(attribution_path, model_dir / attribution_name)
+    if is_cuad_dataset:
+        shutil.copyfile(DOMAIN_MAPPING, model_dir / DOMAIN_MAPPING.name)
     shutil.copyfile(
         MODULE_DIR / "PRETRAINED_ATTRIBUTION.md", model_dir / "PRETRAINED_ATTRIBUTION.md"
     )
@@ -659,6 +839,9 @@ def package_artifacts(
         EVALUATION_METRICS_FILE,
         "label_mapping.json",
         "model.safetensors",
+        "adapter_config.json",
+        "adapter_model.safetensors",
+        attribution_name,
         "NOTICE",
         "tokenizer.json",
         "tokenizer_config.json",
@@ -670,7 +853,9 @@ def package_artifacts(
         if not path.is_file():
             continue
         artifact_hashes[name] = (
-            provenance["weights_sha256"] if name == "model.safetensors" else file_sha256(path)
+            provenance["weights_sha256"]
+            if name == provenance.get("weights_file")
+            else file_sha256(path)
         )
     provenance["artifact_sha256"] = artifact_hashes
     (model_dir / "training_provenance.json").write_text(
@@ -787,8 +972,7 @@ def main() -> None:
                 "exact_match": exact,
                 **tuned_micro_f1(logits, references),
             }
-        predictions = np.argmax(logits, axis=-1)
-        return {"accuracy": float((predictions == references).mean())}
+        return single_label_metrics(logits, references)
 
     problem_type = (
         "multi_label_classification"
@@ -826,6 +1010,7 @@ def main() -> None:
     args.lora_metadata = None
     if lora_is_enabled(args):
         model = apply_lora(model, args)
+        args.lora_initialization = initialize_lora_backbone(model, args)
         args.lora_metadata = {
             "enabled": True,
             "rank": args.lora_rank,
@@ -833,10 +1018,11 @@ def main() -> None:
             "dropout": args.lora_dropout,
             "target_modules": parse_lora_target_modules(args.lora_target_modules),
             "modules_to_save": ["classifier", "score"],
-            "merged_for_inference": True,
+            "merged_for_inference": not getattr(args, "save_adapter_only", False),
             "parameter_counts": getattr(args, "lora_parameter_counts", None),
             "tokenizer_padding": args.tokenizer_padding,
             "torch_dtype": str(torch_dtype) if torch_dtype is not None else None,
+            "initialization": args.lora_initialization,
         }
     args.resolved_revision = getattr(model.config, "_commit_hash", None) or getattr(
         tokenizer, "init_kwargs", {}

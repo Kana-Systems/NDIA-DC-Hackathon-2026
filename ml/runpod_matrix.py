@@ -1055,7 +1055,10 @@ class MatrixRunner:
             or matrix_run.get("stage") != spec.stage
         ):
             raise ValueError("artifact provenance differs from this matrix run")
-        weights = model_dir / "model.safetensors"
+        weights_file = provenance.get("weights_file", "model.safetensors")
+        if weights_file not in {"model.safetensors", "adapter_model.safetensors"}:
+            raise ValueError("artifact provenance names an unsupported weights file")
+        weights = model_dir / weights_file
         if not weights.is_file() or provenance.get("weights_sha256") != sha256_file(weights):
             raise ValueError("artifact weights do not match their recorded hash")
         return metric

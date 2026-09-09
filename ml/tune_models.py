@@ -151,14 +151,38 @@ def fit_thresholds(
     }
 
 
+def supported_weight_path(model_path: Path) -> Path:
+    model_path = Path(model_path)
+    provenance_path = model_path / "training_provenance.json"
+    weight_name = None
+    if provenance_path.is_file():
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        weight_name = provenance.get("weights_file")
+        if weight_name not in (None, "model.safetensors", "adapter_model.safetensors"):
+            raise ValueError("model provenance names an unsupported weights file")
+    candidates = [
+        model_path / weight_name if weight_name else None,
+        model_path / "model.safetensors",
+        model_path / "adapter_model.safetensors",
+        model_path / "linear_weights.npz",
+    ]
+    weight_path = next((path for path in candidates if path and path.is_file()), None)
+    if weight_path is None:
+        raise FileNotFoundError(f"no supported model weights found in {model_path}")
+    return weight_path
+
+
 def probabilities(model_path, split_path, labels, output):
     records = read_jsonl(split_path)
-    weight_path = Path(model_path) / "model.safetensors"
-    if not weight_path.exists():
-        weight_path = Path(model_path) / "linear_weights.npz"
+    model_path = Path(model_path)
+    weight_path = supported_weight_path(model_path)
     fingerprint = hashlib.sha256(
         (
-            digest(weight_path) + digest(split_path) + json.dumps(labels) + "window-inference-v1"
+            digest(weight_path)
+            + digest(split_path)
+            + digest(Path(__file__).with_name("inference.py"))
+            + json.dumps(labels)
+            + "window-inference-v2"
         ).encode()
     ).hexdigest()
     cache = output / "scores" / f"{fingerprint}.npz"
@@ -196,6 +220,8 @@ def probabilities(model_path, split_path, labels, output):
     try:
         import torch
 
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
     except ImportError:

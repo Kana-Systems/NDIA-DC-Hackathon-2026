@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -6,7 +7,13 @@ from types import SimpleNamespace
 
 from evaluation.benchmark import analyze, run
 from ml.heuristic import HeuristicClassifier
-from ml.inference import TransformerClassifier, input_fn, output_fn, predict_fn
+from ml.inference import (
+    TransformerClassifier,
+    _adapter_artifact_settings,
+    input_fn,
+    output_fn,
+    predict_fn,
+)
 from ml.launch_sagemaker import estimator_kwargs, validate_config
 from ml.metrics import multilabel_metrics
 from ml.preprocess_cuad import cuad_category, examples, labels_for_bounds, split
@@ -19,11 +26,61 @@ from ml.train import (
     training_api_kwargs,
     tuned_micro_f1,
 )
+from ml.tune_models import supported_weight_path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class MlEvaluationTests(unittest.TestCase):
+    def test_adapter_artifact_is_pinned_hashed_and_discoverable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            revision = "a" * 40
+            weights = path / "adapter_model.safetensors"
+            weights.write_bytes(b"adapter")
+            (path / "adapter_config.json").write_text(
+                json.dumps(
+                    {
+                        "base_model_name_or_path": "meta-llama/Llama-3.1-8B",
+                        "revision": revision,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (path / "label_mapping.json").write_text(
+                json.dumps(
+                    {
+                        "label2id": {"termination": 0},
+                        "id2label": {"0": "termination"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (path / "training_provenance.json").write_text(
+                json.dumps(
+                    {
+                        "artifact_type": "lora_adapter",
+                        "weights_file": weights.name,
+                        "weights_sha256": hashlib.sha256(b"adapter").hexdigest(),
+                        "base_model_provenance": {
+                            "model_id": "meta-llama/Llama-3.1-8B",
+                            "exact_revision": revision,
+                            "resolved_revision": revision,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            settings = _adapter_artifact_settings(path)
+
+            self.assertEqual(settings["revision"], revision)
+            self.assertEqual(settings["id2label"], {0: "termination"})
+            self.assertEqual(supported_weight_path(path), weights)
+            weights.write_bytes(b"tampered")
+            with self.assertRaisesRegex(RuntimeError, "recorded hash"):
+                _adapter_artifact_settings(path)
+
     def test_training_and_full_contract_windows_share_overlap_label_rule(self):
         spans = [{"label": "termination", "start": 80, "end": 120}]
 

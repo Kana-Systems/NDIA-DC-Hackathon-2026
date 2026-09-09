@@ -159,6 +159,29 @@ def test_llama31_matrix_is_pinned_lora_and_uses_compliant_names():
     } == {"16", "64"}
 
 
+@pytest.mark.parametrize(
+    "filename",
+    ("runpod_llama31_overnight_a.json", "runpod_llama31_overnight_b.json"),
+)
+def test_overnight_llama_sweeps_are_pinned_multiseed_adapter_runs(filename):
+    config = load_matrix_config(Path(__file__).resolve().parents[1] / "ml" / filename)
+
+    assert config["selection_metric"] == "eval_micro_f1_tuned"
+    assert config["finalist_count"] == 2
+    assert config["seeds"] == [17, 29, 43]
+    assert len(config["candidates"]) == 4
+    assert all(
+        candidate["model_name"] == "meta-llama/Llama-3.1-8B"
+        and candidate["revision"] == "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b"
+        and candidate["license"] == "llama3.1"
+        and candidate["batch_size"] == 32
+        and "--save-adapter-only" in candidate["extra_args"]
+        for candidate in config["candidates"]
+    )
+    assert all("qwen" not in candidate["name"].casefold() for candidate in config["candidates"])
+    assert config["full"]["epochs"] == 3.0
+
+
 def test_validation_ranking_prunes_failures_and_breaks_ties_by_name():
     metrics = {
         "c": 0.7,
@@ -255,6 +278,52 @@ def test_runner_resumes_only_the_same_run_not_a_parent_stage(tmp_path):
     (own / "model.safetensors").write_bytes(b"own")
 
     assert runner._parent_checkpoint(spec) == own
+
+
+def test_runner_accepts_hashed_adapter_artifact(tmp_path):
+    config = default_config()
+    spec = build_schedule(config)[0]
+    runner = MatrixRunner(
+        config=config,
+        manifest={"matrix_fingerprint": "fingerprint"},
+        output_dir=tmp_path / "output",
+        model_root=tmp_path / "models",
+        checkpoint_root=tmp_path / "checkpoints",
+        training_dir=tmp_path / "data",
+        hard_deadline=datetime.now(UTC) + timedelta(hours=3),
+        reserve_seconds=MINIMUM_RESERVE_SECONDS,
+        gpu="0",
+        python="python",
+    )
+    model_dir = tmp_path / "adapter"
+    model_dir.mkdir()
+    weights = b"adapter"
+    (model_dir / "adapter_model.safetensors").write_bytes(weights)
+    (model_dir / "evaluation_metrics.json").write_text(
+        json.dumps({"eval_micro_f1": 0.75}),
+        encoding="utf-8",
+    )
+    candidate = config["candidates"][0]
+    (model_dir / "training_provenance.json").write_text(
+        json.dumps(
+            {
+                "base_model_provenance": {
+                    "exact_revision": candidate["revision"],
+                    "license": candidate["license"],
+                },
+                "matrix_run": {
+                    "run_id": spec.run_id,
+                    "candidate": spec.candidate,
+                    "stage": spec.stage,
+                },
+                "weights_file": "adapter_model.safetensors",
+                "weights_sha256": hashlib.sha256(weights).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert runner._completed_metric(spec, model_dir) == 0.75
 
 
 def test_deadline_always_reserves_last_two_hours():

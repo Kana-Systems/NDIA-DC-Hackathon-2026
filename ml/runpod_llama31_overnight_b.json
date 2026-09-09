@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "selection_metric": "eval_micro_f1_tuned",
+  "finalist_count": 2,
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "execution": {
+    "gpus_per_run": 1,
+    "max_concurrent_runs": 1,
+    "deterministic": true,
+    "precision": "auto"
+  },
+  "candidates": [
+    {
+      "name": "Llama-3.1-8B-r64-lr100-cap25-d03",
+      "model_name": "meta-llama/Llama-3.1-8B",
+      "revision": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license": "llama3.1",
+      "license_url": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+      "model_card_url": "https://huggingface.co/meta-llama/Llama-3.1-8B",
+      "metadata_api_url": "https://huggingface.co/api/models/meta-llama/Llama-3.1-8B",
+      "metadata_checked_at": "2026-09-09",
+      "source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/tree/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license_source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/blob/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b/README.md",
+      "positive_weight_cap": 2.5,
+      "learning_rate": 0.0001,
+      "batch_size": 32,
+      "gradient_accumulation_steps": 1,
+      "gradient_checkpointing": false,
+      "max_length": 512,
+      "extra_args": [
+        "--metric-for-best-model",
+        "micro_f1_tuned",
+        "--lora-rank",
+        "64",
+        "--lora-alpha",
+        "128",
+        "--lora-dropout",
+        "0.03",
+        "--lora-target-modules",
+        "q_proj,k_proj,v_proj,o_proj",
+        "--save-adapter-only"
+      ]
+    },
+    {
+      "name": "Llama-3.1-8B-r64-lr050-cap40-d08",
+      "model_name": "meta-llama/Llama-3.1-8B",
+      "revision": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license": "llama3.1",
+      "license_url": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+      "model_card_url": "https://huggingface.co/meta-llama/Llama-3.1-8B",
+      "metadata_api_url": "https://huggingface.co/api/models/meta-llama/Llama-3.1-8B",
+      "metadata_checked_at": "2026-09-09",
+      "source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/tree/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license_source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/blob/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b/README.md",
+      "positive_weight_cap": 4.0,
+      "learning_rate": 0.00005,
+      "batch_size": 32,
+      "gradient_accumulation_steps": 1,
+      "gradient_checkpointing": false,
+      "max_length": 512,
+      "extra_args": [
+        "--metric-for-best-model",
+        "micro_f1_tuned",
+        "--lora-rank",
+        "64",
+        "--lora-alpha",
+        "128",
+        "--lora-dropout",
+        "0.08",
+        "--lora-target-modules",
+        "q_proj,k_proj,v_proj,o_proj",
+        "--save-adapter-only"
+      ]
+    },
+    {
+      "name": "Llama-3.1-8B-r128-lr075-cap30-d03",
+      "model_name": "meta-llama/Llama-3.1-8B",
+      "revision": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license": "llama3.1",
+      "license_url": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+      "model_card_url": "https://huggingface.co/meta-llama/Llama-3.1-8B",
+      "metadata_api_url": "https://huggingface.co/api/models/meta-llama/Llama-3.1-8B",
+      "metadata_checked_at": "2026-09-09",
+      "source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/tree/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license_source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/blob/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b/README.md",
+      "positive_weight_cap": 3.0,
+      "learning_rate": 0.000075,
+      "batch_size": 32,
+      "gradient_accumulation_steps": 1,
+      "gradient_checkpointing": false,
+      "max_length": 512,
+      "extra_args": [
+        "--metric-for-best-model",
+        "micro_f1_tuned",
+        "--lora-rank",
+        "128",
+        "--lora-alpha",
+        "256",
+        "--lora-dropout",
+        "0.03",
+        "--lora-target-modules",
+        "q_proj,k_proj,v_proj,o_proj",
+        "--save-adapter-only"
+      ]
+    },
+    {
+      "name": "Llama-3.1-8B-r32-lr075-cap25-d05",
+      "model_name": "meta-llama/Llama-3.1-8B",
+      "revision": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license": "llama3.1",
+      "license_url": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+      "model_card_url": "https://huggingface.co/meta-llama/Llama-3.1-8B",
+      "metadata_api_url": "https://huggingface.co/api/models/meta-llama/Llama-3.1-8B",
+      "metadata_checked_at": "2026-09-09",
+      "source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/tree/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license_source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/blob/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b/README.md",
+      "positive_weight_cap": 2.5,
+      "learning_rate": 0.000075,
+      "batch_size": 32,
+      "gradient_accumulation_steps": 1,
+      "gradient_checkpointing": false,
+      "max_length": 512,
+      "extra_args": [
+        "--metric-for-best-model",
+        "micro_f1_tuned",
+        "--lora-rank",
+        "32",
+        "--lora-alpha",
+        "64",
+        "--lora-dropout",
+        "0.05",
+        "--lora-target-modules",
+        "q_proj,k_proj,v_proj,o_proj",
+        "--save-adapter-only"
+      ]
+    }
+  ],
+  "smoke": {
+    "name": "smoke",
+    "epochs": 1.0,
+    "max_steps": 12,
+    "eval_steps": 6,
+    "keep_count": 4,
+    "early_stopping_patience": 0
+  },
+  "screens": [
+    {
+      "name": "screen-1",
+      "epochs": 1.0,
+      "max_steps": 96,
+      "eval_steps": 48,
+      "keep_count": 3,
+      "early_stopping_patience": 1
+    },
+    {
+      "name": "screen-2",
+      "epochs": 1.0,
+      "max_steps": 288,
+      "eval_steps": 96,
+      "keep_count": 2,
+      "early_stopping_patience": 1
+    }
+  ],
+  "full": {
+    "name": "full",
+    "epochs": 3.0,
+    "max_steps": -1,
+    "eval_steps": 50,
+    "early_stopping_patience": 1
+  },
+  "optimizer": {
+    "warmup_ratio": 0.1,
+    "weight_decay": 0.01
+  }
+}
