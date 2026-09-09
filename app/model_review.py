@@ -205,13 +205,18 @@ class ModelReviewService:
     def review(self, document: ParsedDocument, metadata: AcquisitionMetadata) -> ReviewReport:
         if len(document.text) > 30_000:
             raise ValueError("Model review currently accepts up to 30,000 characters per review")
+        # TXT parsing preserves blank blocks to retain exact source text and IDs.
+        # Classify only substantive blocks, keeping their original citation locations.
+        review_segments = [segment for segment in document.segments if segment.text.strip()]
+        if not review_segments:
+            raise ValueError("The contract contains no reviewable text")
         start = time.monotonic()
         variant = getattr(self, "variant", "rag_classifier")
         thresholds = getattr(self, "thresholds", {})
         self.review_trace = {"variant": variant, "calls": [], "queries": []}
         predictions = (
             self._classify(
-                [segment.text for segment in document.segments],
+                [segment.text for segment in review_segments],
                 0.0 if thresholds else self.settings.classifier_threshold,
             )
             if variant == "rag_classifier"
@@ -226,7 +231,7 @@ class ModelReviewService:
         )
         learned = []
         for segment, prediction in zip(
-            document.segments if predictions else [], predictions, strict=True
+            review_segments if predictions else [], predictions, strict=True
         ):
             for label in prediction["labels"]:
                 if label["score"] < thresholds.get(
@@ -312,7 +317,7 @@ class ModelReviewService:
                 "Return at most 12 findings; an empty list is valid if no issues are supported."
             ),
             "metadata": metadata.model_dump(mode="json"),
-            "document": [segment.model_dump(mode="json") for segment in document.segments],
+            "document": [segment.model_dump(mode="json") for segment in review_segments],
             "classifier_candidates": [clause.model_dump(mode="json") for clause in learned[:40]],
             "evidence": [item.model_dump(mode="json") for item in evidence],
         }
