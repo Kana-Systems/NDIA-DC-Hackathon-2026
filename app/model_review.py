@@ -1,10 +1,13 @@
 """CUAD classification + official retrieval + Terra document review."""
 
+import io
 import json
+import math
 import re
 import time
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -40,6 +43,85 @@ def trained_model(path: str):
     return model
 
 
+class SageMakerClassifier:
+    """Invoke a private GovCloud endpoint using the existing inference contract."""
+
+    max_request_bytes = 6 * 1024 * 1024
+
+    def __init__(self, settings: Settings, *, client: Any | None = None):
+        if not settings.classifier_endpoint_name:
+            raise ValueError("classifier endpoint name is required")
+        if not settings.classifier_endpoint_model_id:
+            raise ValueError("classifier endpoint model ID is required")
+        self.endpoint_name = settings.classifier_endpoint_name
+        self.model_id = settings.classifier_endpoint_model_id
+        if client is None:
+            import boto3
+            from botocore.config import Config
+
+            client = boto3.client(
+                "sagemaker-runtime",
+                region_name=settings.aws_region,
+                config=Config(
+                    connect_timeout=settings.classifier_endpoint_timeout_seconds,
+                    read_timeout=settings.classifier_endpoint_timeout_seconds,
+                    retries={"max_attempts": 2, "mode": "standard"},
+                ),
+            )
+        self.client = client
+
+    def predict(self, texts: list[str], threshold: float) -> list[dict[str, Any]]:
+        body = json.dumps(
+            {"texts": texts, "threshold": threshold},
+            separators=(",", ":"),
+        ).encode("utf-8")
+        if len(body) > self.max_request_bytes:
+            raise ValueError("Classifier request exceeds the SageMaker real-time payload limit")
+        response = self.client.invoke_endpoint(
+            EndpointName=self.endpoint_name,
+            Body=body,
+            ContentType="application/json",
+            Accept="application/json",
+        )
+        stream = response.get("Body")
+        if not hasattr(stream, "read"):
+            raise RuntimeError("Classifier endpoint returned no response body")
+        raw = stream.read(self.max_request_bytes + 1)
+        if len(raw) > self.max_request_bytes:
+            raise RuntimeError("Classifier endpoint response exceeds the allowed size")
+        try:
+            payload = json.load(io.BytesIO(raw))
+        except (TypeError, ValueError) as error:
+            raise RuntimeError("Classifier endpoint returned invalid JSON") from error
+        predictions = payload.get("predictions") if isinstance(payload, dict) else None
+        if not isinstance(predictions, list) or len(predictions) != len(texts):
+            raise RuntimeError("Classifier endpoint returned an invalid prediction count")
+        for prediction in predictions:
+            if not isinstance(prediction, dict) or prediction.get("model_id") != self.model_id:
+                raise RuntimeError("Classifier endpoint returned an unexpected model ID")
+            labels = prediction.get("labels")
+            if not isinstance(labels, list):
+                raise RuntimeError("Classifier endpoint returned invalid labels")
+            seen: set[str] = set()
+            for label in labels:
+                if not isinstance(label, dict):
+                    raise RuntimeError("Classifier endpoint returned an invalid label")
+                name = label.get("label")
+                score = label.get("score")
+                if (
+                    not isinstance(name, str)
+                    or not name
+                    or name in seen
+                    or not isinstance(score, (float, int))
+                    or isinstance(score, bool)
+                    or not math.isfinite(float(score))
+                    or not 0 <= float(score) <= 1
+                ):
+                    raise RuntimeError("Classifier endpoint returned an invalid label score")
+                seen.add(name)
+        return predictions
+
+
 class ModelFinding(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     severity: Severity
@@ -72,11 +154,23 @@ class ModelReviewService:
         if settings.model_selection_path and Path(settings.model_selection_path).is_file():
             selection = json.loads(Path(settings.model_selection_path).read_text())
             model_path = selection["model_path"]
-        self.model = trained_model(model_path) if self.variant == "rag_classifier" else None
+        self.endpoint = (
+            SageMakerClassifier(settings)
+            if self.variant == "rag_classifier" and settings.classifier_endpoint_name
+            else None
+        )
+        self.model = (
+            trained_model(model_path)
+            if self.variant == "rag_classifier" and self.endpoint is None
+            else None
+        )
+        self.classifier_model_id = (
+            self.endpoint.model_id if self.endpoint else getattr(self.model, "model_id", "")
+        )
         self.thresholds = {}
-        if self.model and settings.classifier_thresholds_path:
+        if self.classifier_model_id and settings.classifier_thresholds_path:
             tuning = json.loads(Path(settings.classifier_thresholds_path).read_text())
-            if tuning["model_id"] != self.model.model_id:
+            if tuning["model_id"] != self.classifier_model_id:
                 raise ValueError("Threshold artifact belongs to a different model")
             self.thresholds = tuning["thresholds"]
             if any(
@@ -107,13 +201,10 @@ class ModelReviewService:
         thresholds = getattr(self, "thresholds", {})
         self.review_trace = {"variant": variant, "calls": [], "queries": []}
         predictions = (
-            predict_fn(
-                {
-                    "texts": [segment.text for segment in document.segments],
-                    "threshold": 0.0 if thresholds else self.settings.classifier_threshold,
-                },
-                self.model,
-            )["predictions"]
+            self._classify(
+                [segment.text for segment in document.segments],
+                0.0 if thresholds else self.settings.classifier_threshold,
+            )
             if variant == "rag_classifier"
             else []
         )
@@ -292,7 +383,16 @@ class ModelReviewService:
             synthesis_mode="bedrock-gpt-5.6-terra-model-review"
             if variant == "rag_classifier"
             else f"bedrock-gpt-5.6-terra-{variant}",
-            classifier_model_ids=([self.model.model_id] if self.model else [])
+            classifier_model_ids=(
+                list(
+                    dict.fromkeys(
+                        [self.classifier_model_id]
+                        + [clause.classifier_model_id for clause in learned]
+                    )
+                )
+                if self.classifier_model_id
+                else []
+            )
             + ["deterministic-keyword-v1"],
             corpus_manifest=self.retrieval.manifest() if self.retrieval else {},
             knowledge_graph={
@@ -321,3 +421,15 @@ class ModelReviewService:
                 retrieved_evidence_count=len(evidence),
             ),
         )
+
+    def _classify(self, texts: list[str], threshold: float) -> list[dict[str, Any]]:
+        if self.endpoint:
+            self.review_trace["classifier_backend"] = "sagemaker"
+            return self.endpoint.predict(texts, threshold)
+        if self.model is None:
+            return []
+        self.review_trace["classifier_backend"] = "packaged"
+        return predict_fn(
+            {"texts": texts, "threshold": threshold},
+            self.model,
+        )["predictions"]

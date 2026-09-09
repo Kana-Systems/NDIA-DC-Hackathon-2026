@@ -192,6 +192,39 @@ variable "sagemaker_allowed_training_instance_types" {
   }
 }
 
+variable "classifier_endpoint_name" {
+  description = "Optional private SageMaker endpoint for the reviewed CUAD ensemble; empty keeps the packaged Legal-BERT rollback active."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.classifier_endpoint_name == "" || can(regex("^[A-Za-z0-9](?:-*[A-Za-z0-9]){0,62}$", var.classifier_endpoint_name))
+    error_message = "classifier_endpoint_name must be empty or a valid SageMaker endpoint name."
+  }
+}
+
+variable "classifier_endpoint_model_id" {
+  description = "Exact model ID the SageMaker endpoint must return with every prediction."
+  type        = string
+  default     = "Llama-3.1-CUAD-r128-ensemble-3seed"
+
+  validation {
+    condition     = var.classifier_endpoint_model_id == "Llama-3.1-CUAD-r128-ensemble-3seed"
+    error_message = "Only the hash-verified three-seed Llama CUAD ensemble is approved for this canary integration."
+  }
+}
+
+variable "classifier_endpoint_timeout_seconds" {
+  description = "Application read/connect timeout for the private SageMaker classifier endpoint."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.classifier_endpoint_timeout_seconds >= 1 && var.classifier_endpoint_timeout_seconds <= 300
+    error_message = "classifier_endpoint_timeout_seconds must be between 1 and 300."
+  }
+}
+
 variable "allowed_ingress_cidrs" {
   description = "Explicit IPv4 CIDRs allowed to reach HTTPS; no public-access default is provided."
   type        = list(string)

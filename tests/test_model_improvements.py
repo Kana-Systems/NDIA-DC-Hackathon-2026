@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 from types import SimpleNamespace
 
@@ -6,7 +7,7 @@ import numpy as np
 import pytest
 
 from app.config import Settings
-from app.model_review import ModelReviewService
+from app.model_review import ModelReviewService, SageMakerClassifier
 from app.models import Evidence
 from app.parsers import DocumentParser
 from app.sample import sample_contract_bytes, sample_metadata
@@ -171,6 +172,97 @@ def test_classifier_off_loads_no_model_and_has_no_hints(monkeypatch):
     assert prompts[1]["classifier_candidates"] == []
     assert not any(c.clause_id.startswith("CUAD:") for c in report.clause_inventory)
     assert len(service.review_trace["calls"]) == 2
+
+
+def test_sagemaker_classifier_uses_pinned_endpoint_model_contract():
+    class Client:
+        def invoke_endpoint(self, **kwargs):
+            assert kwargs["EndpointName"] == "kana-legal-cuad-ensemble"
+            assert kwargs["ContentType"] == kwargs["Accept"] == "application/json"
+            assert json.loads(kwargs["Body"]) == {
+                "texts": ["Termination for convenience applies."],
+                "threshold": 0.525,
+            }
+            return {
+                "Body": io.BytesIO(
+                    json.dumps(
+                        {
+                            "predictions": [
+                                {
+                                    "model_id": "Llama-3.1-CUAD-r128-ensemble-3seed",
+                                    "labels": [
+                                        {
+                                            "label": "termination_for_convenience",
+                                            "score": 0.91,
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    ).encode()
+                )
+            }
+
+    classifier = SageMakerClassifier(
+        Settings(
+            classifier_endpoint_name="kana-legal-cuad-ensemble",
+            classifier_endpoint_model_id="Llama-3.1-CUAD-r128-ensemble-3seed",
+        ),
+        client=Client(),
+    )
+
+    predictions = classifier.predict(["Termination for convenience applies."], 0.525)
+
+    assert predictions[0]["labels"][0]["score"] == 0.91
+
+
+def test_model_review_prefers_configured_sagemaker_classifier(monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("packaged model must remain an inactive rollback")
+
+    prediction = {
+        "model_id": "Llama-3.1-CUAD-r128-ensemble-3seed",
+        "labels": [{"label": "termination_for_convenience", "score": 0.91}],
+    }
+    endpoint = SimpleNamespace(
+        model_id=prediction["model_id"],
+        predict=lambda texts, threshold: [prediction for _ in texts],
+    )
+    evidence = Evidence(evidence_id="e1", source="FAR", title="Termination", excerpt="Source")
+    monkeypatch.setattr("app.model_review.trained_model", forbidden)
+    monkeypatch.setattr("app.model_review.SageMakerClassifier", lambda settings: endpoint)
+    monkeypatch.setattr(
+        "app.model_review.FederalCorpusRetrieval",
+        lambda path: SimpleNamespace(
+            retrieve=lambda queries: [evidence],
+            manifest=lambda: {},
+            relations=lambda ids: [],
+        ),
+    )
+    settings = Settings(
+        bedrock_enabled=True,
+        classifier_endpoint_name="kana-legal-cuad-ensemble",
+        classifier_endpoint_model_id=prediction["model_id"],
+    )
+    service = ModelReviewService(settings)
+    prompts = []
+
+    def fake(prompt, **kwargs):
+        prompts.append(prompt)
+        if "classifier_topics" in prompt:
+            return {"queries": ["termination"]}
+        return {"executive_summary": "Review", "findings": []}
+
+    service.llm = SimpleNamespace(request_json=fake)
+    report = service.review(
+        DocumentParser(settings).parse("sample.docx", sample_contract_bytes()),
+        sample_metadata(),
+    )
+
+    assert service.model is None
+    assert service.review_trace["classifier_backend"] == "sagemaker"
+    assert "termination_for_convenience" in prompts[0]["classifier_topics"]
+    assert prediction["model_id"] in report.classifier_model_ids
 
 
 def test_llm_only_needs_neither_corpus_nor_classifier(monkeypatch):

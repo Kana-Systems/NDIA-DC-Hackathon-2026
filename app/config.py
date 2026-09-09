@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     classifier_domain_mapping_path: str = "ml/cuad_category_domain_mapping.json"
     classifier_threshold: float = Field(default=0.5, ge=0, le=1)
     classifier_thresholds_path: str = ""
+    classifier_endpoint_name: str = Field(
+        default="",
+        pattern=r"^$|^[A-Za-z0-9](?:-*[A-Za-z0-9]){0,62}$",
+    )
+    classifier_endpoint_model_id: str = Field(default="", max_length=200)
+    classifier_endpoint_timeout_seconds: int = Field(default=120, ge=1, le=300)
     bedrock_enabled: bool = False
     model_review_enabled: bool = False
     model_review_max_candidates: int = Field(default=12, ge=1, le=30)

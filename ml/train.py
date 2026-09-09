@@ -544,6 +544,26 @@ def lora_backbone_state_dict(state: Mapping[str, Any]) -> dict[str, Any]:
     return transferable
 
 
+def merge_lora_backbone_state(
+    current_state: Mapping[str, Any],
+    source_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Replace LoRA tensors while preserving the freshly initialized task head."""
+
+    current_backbone = lora_backbone_state_dict(current_state)
+    source_backbone = lora_backbone_state_dict(source_state)
+    if current_backbone.keys() != source_backbone.keys():
+        missing = sorted(current_backbone.keys() - source_backbone.keys())
+        unexpected = sorted(source_backbone.keys() - current_backbone.keys())
+        raise ValueError(
+            "adapter LoRA tensors do not match the target architecture; "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+    merged = dict(current_state)
+    merged.update(source_backbone)
+    return merged
+
+
 def initialize_lora_backbone(model: Any, args: argparse.Namespace) -> dict[str, Any] | None:
     """Initialize a fresh task head from another adapter's backbone tensors."""
 
@@ -575,9 +595,12 @@ def initialize_lora_backbone(model: Any, args: argparse.Namespace) -> dict[str, 
             f"adapter target modules {sorted(source_targets)} do not match "
             f"{sorted(requested_targets)}"
         )
-    safetensors_torch = importlib.import_module("safetensors.torch")
-    state = lora_backbone_state_dict(safetensors_torch.load_file(str(weights_path)))
     peft_save = importlib.import_module("peft.utils.save_and_load")
+    safetensors_torch = importlib.import_module("safetensors.torch")
+    source_state = safetensors_torch.load_file(str(weights_path))
+    source_backbone = lora_backbone_state_dict(source_state)
+    current_state = peft_save.get_peft_model_state_dict(model, adapter_name="default")
+    state = merge_lora_backbone_state(current_state, source_state)
     result = peft_save.set_peft_model_state_dict(model, state, adapter_name="default")
     unexpected_lora = [
         key
@@ -593,13 +616,26 @@ def initialize_lora_backbone(model: Any, args: argparse.Namespace) -> dict[str, 
         "source_adapter": str(source),
         "adapter_config_sha256": file_sha256(config_path),
         "adapter_weights_sha256": file_sha256(weights_path),
-        "transferred_tensor_count": len(state),
+        "transferred_tensor_count": len(source_backbone),
+        "preserved_target_task_tensor_count": len(current_state) - len(source_backbone),
         "task_heads_transferred": False,
     }
     provenance_path = source / "training_provenance.json"
     if provenance_path.is_file():
         metadata["source_provenance_sha256"] = file_sha256(provenance_path)
     return metadata
+
+
+def enable_lora_checkpoint_input_gradients(model: Any, args: argparse.Namespace) -> bool:
+    """Keep LoRA gradients connected when checkpointing a frozen backbone."""
+
+    if not (lora_is_enabled(args) and bool(getattr(args, "gradient_checkpointing", False))):
+        return False
+    enable = getattr(model, "enable_input_require_grads", None)
+    if not callable(enable):
+        raise RuntimeError("gradient-checkpointed LoRA requires enable_input_require_grads support")
+    enable()
+    return True
 
 
 def save_trained_model(trainer: Any, tokenizer: Any, args: argparse.Namespace) -> None:
@@ -1011,6 +1047,7 @@ def main() -> None:
     if lora_is_enabled(args):
         model = apply_lora(model, args)
         args.lora_initialization = initialize_lora_backbone(model, args)
+        input_gradients_enabled = enable_lora_checkpoint_input_gradients(model, args)
         args.lora_metadata = {
             "enabled": True,
             "rank": args.lora_rank,
@@ -1023,6 +1060,7 @@ def main() -> None:
             "tokenizer_padding": args.tokenizer_padding,
             "torch_dtype": str(torch_dtype) if torch_dtype is not None else None,
             "initialization": args.lora_initialization,
+            "checkpoint_input_gradients_enabled": input_gradients_enabled,
         }
     args.resolved_revision = getattr(model.config, "_commit_hash", None) or getattr(
         tokenizer, "init_kwargs", {}

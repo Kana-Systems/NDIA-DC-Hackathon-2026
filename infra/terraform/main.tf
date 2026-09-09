@@ -433,6 +433,16 @@ data "aws_iam_policy_document" "task" {
     resources = [local.embedding_model_arn]
   }
 
+  dynamic "statement" {
+    for_each = var.classifier_endpoint_name == "" ? [] : [var.classifier_endpoint_name]
+
+    content {
+      sid       = "InvokeReviewedClassifierEndpoint"
+      actions   = ["sagemaker:InvokeEndpoint"]
+      resources = ["arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint/${statement.value}"]
+    }
+  }
+
   statement {
     sid = "OpenSearchDataPlane"
     actions = [
@@ -700,6 +710,10 @@ resource "aws_ecs_task_definition" "app" {
       { name = "CLASSIFIER_ENABLED", value = "true" },
       { name = "CLASSIFIER_MODEL_DIR", value = "/srv/app/artifacts/models/legal-bert-cuad" },
       { name = "MODEL_SELECTION_PATH", value = "/srv/app/artifacts/models/selected.json" },
+      { name = "CLASSIFIER_ENDPOINT_NAME", value = var.classifier_endpoint_name },
+      { name = "CLASSIFIER_ENDPOINT_MODEL_ID", value = var.classifier_endpoint_model_id },
+      { name = "CLASSIFIER_ENDPOINT_TIMEOUT_SECONDS", value = tostring(var.classifier_endpoint_timeout_seconds) },
+      { name = "CLASSIFIER_THRESHOLDS_PATH", value = var.classifier_endpoint_name == "" ? "" : "/srv/app/ml/deployment/llama_r128_ensemble_thresholds.json" },
       { name = "LOCAL_CORPUS_PATH", value = "/srv/app/artifacts/knowledge/federal-v2.sqlite" },
       { name = "MODEL_REVIEW_ENABLED", value = "true" },
       { name = "BEDROCK_ENABLED", value = "true" },

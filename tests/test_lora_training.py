@@ -6,9 +6,11 @@ import pytest
 
 from ml.train import (
     build_parser,
+    enable_lora_checkpoint_input_gradients,
     ensure_tokenizer_padding,
     lora_backbone_state_dict,
     lora_is_enabled,
+    merge_lora_backbone_state,
     package_artifacts,
     parameter_counts,
     parse_lora_target_modules,
@@ -78,6 +80,46 @@ def test_lora_transfer_keeps_backbone_tensors_and_discards_task_head():
     }
     with pytest.raises(ValueError, match="no transferable"):
         lora_backbone_state_dict({"base.model.score.weight": "head"})
+
+
+def test_lora_transfer_preserves_new_task_head_required_by_peft_loader():
+    current = {
+        "base.model.layers.0.q_proj.lora_A.weight": "new-a",
+        "base.model.layers.0.q_proj.lora_B.weight": "new-b",
+        "base.model.score.weight": "new-task-head",
+    }
+    source = {
+        "base.model.layers.0.q_proj.lora_A.weight": "source-a",
+        "base.model.layers.0.q_proj.lora_B.weight": "source-b",
+        "base.model.score.weight": "old-task-head",
+    }
+
+    assert merge_lora_backbone_state(current, source) == {
+        "base.model.layers.0.q_proj.lora_A.weight": "source-a",
+        "base.model.layers.0.q_proj.lora_B.weight": "source-b",
+        "base.model.score.weight": "new-task-head",
+    }
+
+
+def test_gradient_checkpointed_lora_enables_input_gradients():
+    calls = []
+    model = SimpleNamespace(enable_input_require_grads=lambda: calls.append("enabled"))
+
+    assert (
+        enable_lora_checkpoint_input_gradients(
+            model,
+            Namespace(lora_rank=128, gradient_checkpointing=True),
+        )
+        is True
+    )
+    assert calls == ["enabled"]
+    assert (
+        enable_lora_checkpoint_input_gradients(
+            model,
+            Namespace(lora_rank=128, gradient_checkpointing=False),
+        )
+        is False
+    )
 
 
 def test_adapter_only_save_does_not_merge_base_model(tmp_path):
