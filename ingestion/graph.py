@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 
@@ -29,9 +29,24 @@ class GraphClient:
         self.client_secret = client_secret
         self.tenant_id = tenant_id
         self.graph_base_url = graph_base_url.rstrip("/")
+        authorities = {
+            "graph.microsoft.com": "login.microsoftonline.com",
+            "graph.microsoft.us": "login.microsoftonline.us",
+            "dod-graph.microsoft.us": "login.microsoftonline.us",
+        }
+        graph_url = urlsplit(self.graph_base_url)
+        if (
+            graph_url.scheme != "https"
+            or graph_url.netloc not in authorities
+            or graph_url.path != "/v1.0"
+        ):
+            raise ValueError("Use a supported Microsoft Graph v1.0 endpoint")
         self.token_url = token_url or (
-            f"https://login.microsoftonline.com/{quote(tenant_id, safe='')}/oauth2/v2.0/token"
+            f"https://{authorities[graph_url.netloc]}/{quote(tenant_id, safe='')}/oauth2/v2.0/token"
         )
+        token_parts = urlsplit(self.token_url)
+        if token_parts.scheme != "https" or token_parts.netloc != authorities[graph_url.netloc]:
+            raise ValueError("Token endpoint must match the Microsoft Graph cloud")
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
         self._access_token: str | None = None
@@ -60,16 +75,24 @@ class GraphClient:
     def get_bytes(self, url_or_path: str) -> bytes:
         return self._get(url_or_path).content
 
-    def _get(self, url_or_path: str) -> requests.Response:
+    def _get(self, url_or_path: str, **kwargs) -> requests.Response:
         url = (
             url_or_path
             if url_or_path.startswith(("https://", "http://"))
             else f"{self.graph_base_url}/{url_or_path.lstrip('/')}"
         )
+        parts = urlsplit(url)
+        if (
+            parts.scheme != "https"
+            or parts.netloc != urlsplit(self.graph_base_url).netloc
+            or not parts.path.startswith("/v1.0/")
+        ):
+            raise ValueError("Refusing a Graph URL outside the configured cloud")
         response = self.session.get(
             url,
             headers={"Authorization": f"Bearer {self._token()}"},
             timeout=self.timeout_seconds,
+            **kwargs,
         )
         if response.status_code == 401:
             self._access_token = None
@@ -77,9 +100,47 @@ class GraphClient:
                 url,
                 headers={"Authorization": f"Bearer {self._token()}"},
                 timeout=self.timeout_seconds,
+                **kwargs,
             )
         response.raise_for_status()
         return response
+
+    def download(self, path: str, max_bytes: int) -> bytes:
+        response = self._get(path, stream=True, allow_redirects=False)
+        try:
+            if response.status_code in {301, 302, 303, 307, 308}:
+                target = response.headers.get("Location", "")
+                parsed = urlsplit(target)
+                suffix = (
+                    ".sharepoint.com"
+                    if "graph.microsoft.com" in self.graph_base_url
+                    else ".sharepoint.us"
+                )
+                if (
+                    parsed.scheme != "https"
+                    or not (parsed.hostname or "").endswith(suffix)
+                    or parsed.username
+                    or parsed.password
+                    or parsed.port not in {None, 443}
+                ):
+                    raise ValueError("Refusing an unapproved document download host")
+                response.close()
+                # Preauthenticated download URLs must not receive the Graph bearer token.
+                response = requests.get(
+                    target, timeout=self.timeout_seconds, stream=True, allow_redirects=False
+                )
+            if response.status_code != 200:
+                raise ValueError("Document download did not succeed")
+            if int(response.headers.get("Content-Length", 0)) > max_bytes:
+                raise ValueError("Document exceeds upload size limit")
+            data = bytearray()
+            for chunk in response.iter_content(65536):
+                data.extend(chunk)
+                if len(data) > max_bytes:
+                    raise ValueError("Document exceeds upload size limit")
+            return bytes(data)
+        finally:
+            response.close()
 
 
 def _identity_principals(item: Mapping[str, Any]) -> tuple[str, ...]:

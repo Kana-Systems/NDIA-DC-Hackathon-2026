@@ -54,7 +54,9 @@ def document_record(request, principal, record_id):
 
 
 def parsed_text(title, text):
-    paragraphs = [text[i : i + 1800] for i in range(0, len(text), 1800)]
+    # ParsedDocument joins segments with blank lines. Split only at those existing
+    # boundaries so TXT sources are reconstructed verbatim, never mid-word.
+    paragraphs = text.split("\n\n")
     return ParsedDocument(
         filename=title,
         media_type="text/plain",
@@ -79,9 +81,11 @@ class DocumentInput(BaseModel):
 
 
 def save_document(db, principal, document, category, metadata=None, **extra):
-    if len(document.text) > 30000:
-        raise HTTPException(413, "Split this document into sections of at most 30,000 characters.")
+    limit = db.settings.max_extracted_characters if db.s3 is not None else 30000
+    if len(document.text) > limit:
+        raise HTTPException(413, f"Source exceeds this deployment's {limit:,}-character limit.")
     record_id = extra.pop("record_id", None)
+    raw_bytes = extra.pop("raw_bytes", None)
     payload = {
         "title": document.filename,
         "text": document.text,
@@ -89,14 +93,40 @@ def save_document(db, principal, document, category, metadata=None, **extra):
         "parsed": document.model_dump(mode="json"),
         "category": category,
         "metadata": metadata,
-        "status": "ready",
+        "status": "indexing" if db.search else "ready",
         "deleted": False,
         "version": document.sha256[:12],
         **extra,
     }
     item = db.save(principal, "document", payload, record_id)
-    db.event(principal, "document.indexed", item["id"], {"version": item["version"]})
+    if raw_bytes is not None and db.s3 is not None:
+        item["original_key"] = db.put_blob(principal, item["id"], raw_bytes, document.media_type)
+        item = db.save(principal, "document", item, item["id"], item["revision"])
+    if db.search:
+        item = index_document(db, principal, item)
+    action = "document.index_failed" if item["status"] == "index-failed" else "document.indexed"
+    db.event(principal, action, item["id"], {"version": item["version"]})
     return item
+
+
+def index_document(db, principal, item):
+    try:
+        db.search.index_document(item)
+        item["status"] = "ready"
+        item.pop("index_error", None)
+    except Exception:
+        item["status"] = "index-failed"
+        item["index_error"] = "Saved source; search indexing failed. Retry indexing."
+    return db.save(principal, "document", item, item["id"], item["revision"])
+
+
+@router.post("/documents/{record_id}/reindex")
+def reindex(record_id: str, request: Request, principal: Principal):
+    item = document_record(request, principal, record_id)
+    db = store(request)
+    if not db.search:
+        raise HTTPException(409, "OpenSearch is not configured")
+    return index_document(db, principal, item)
 
 
 @router.get("/documents")
@@ -136,7 +166,9 @@ async def upload_document(
         document = await asyncio.to_thread(parser.parse, file.filename or "upload", data)
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
-    return save_document(store(request), principal, document, category)
+    return await asyncio.to_thread(
+        save_document, store(request), principal, document, category, raw_bytes=data
+    )
 
 
 @router.get("/documents/{record_id}")
@@ -153,13 +185,14 @@ class MetadataInput(BaseModel):
 def metadata(record_id: str, payload: MetadataInput, request: Request, principal: Principal):
     item = document_record(request, principal, record_id)
     item["metadata"] = payload.metadata.model_dump(mode="json")
-    item["status"] = "ready"
     return store(request).save(principal, "document", item, record_id, payload.revision)
 
 
 @router.post("/documents/{record_id}/review")
 async def review(record_id: str, request: Request, principal: Principal, settings: Configuration):
     item = document_record(request, principal, record_id)
+    if not store(request).source_available(principal, item):
+        raise HTTPException(409, "Sync or index this source successfully before review")
     if item["category"] != "contract" or not item.get("metadata"):
         raise HTTPException(422, "Select a contract and save its acquisition details first.")
     service = copy(get_review_service(request))
@@ -227,7 +260,8 @@ def decide(record_id: str, payload: DecisionInput, request: Request, principal: 
     if item["kind"] == "review":
         document = document_record(request, principal, item["document_id"])
         if (
-            document["version"] != item["document_version"]
+            not store(request).source_available(principal, document)
+            or document["version"] != item["document_version"]
             or document["metadata"] != item["metadata_snapshot"]
         ):
             raise HTTPException(409, "Contract or acquisition details changed. Run a new review.")
@@ -248,7 +282,8 @@ def export(record_id: str, request: Request, principal: Principal):
     if item["kind"] == "review":
         document = document_record(request, principal, item["document_id"])
         if (
-            document["version"] != item["document_version"]
+            not store(request).source_available(principal, document)
+            or document["version"] != item["document_version"]
             or document["metadata"] != item["metadata_snapshot"]
         ):
             raise HTTPException(409, "Review is stale. Re-review the updated contract.")
@@ -296,7 +331,7 @@ def ensure_current_sources(item, request, principal):
         return
     for link in links:
         doc = document_record(request, principal, link["document_id"])
-        if doc["version"] != link["version"]:
+        if doc["version"] != link["version"] or not store(request).source_available(principal, doc):
             raise HTTPException(409, "Supporting source changed. Create a fresh draft.")
 
 
@@ -313,16 +348,24 @@ class WorkspaceRetrieval:
         return FederalCorpusRetrieval(self.settings.local_corpus_path).relations(document_ids)
 
     def retrieve(self, queries, principal=None, filters=None):
+        if self.db.search:
+            local = self.db.search.retrieve(
+                queries, self.principal, self.db, self.document_id, self.references_only
+            )
+            federal = self.federal(queries)
+            return local + federal
         query = " ".join(queries)
         terms = set(re.findall(r"\w+", query.casefold()))
         ranked = []
         for doc in self.db.list(self.principal, "document"):
-            if doc.get("deleted") or doc.get("status") == "source-error":
+            if not self.db.source_available(self.principal, doc):
                 continue
             if self.references_only and doc["category"] == "contract":
                 continue
             if self.document_id and doc["id"] != self.document_id and doc["category"] == "contract":
                 continue
+            if "text" not in doc:
+                doc = self.db.get(self.principal, doc["id"])
             for index, text in enumerate(re.findall(r"[\s\S]{1,1500}", doc["text"])):
                 score = len(terms & set(re.findall(r"\w+", text.casefold())))
                 if doc["id"] == self.document_id:
@@ -346,12 +389,17 @@ class WorkspaceRetrieval:
                     )
         ranked.sort(key=lambda pair: pair[0], reverse=True)
         local = [item for _, item in ranked[:4]]
+        return local + self.federal(queries)
+
+    def federal(self, queries):
+        if self.db.search and self.settings.local_corpus_path:
+            return self.db.search.retrieve_federal(queries)
         federal = []
         if self.settings.local_corpus_path:
             federal = FederalCorpusRetrieval(self.settings.local_corpus_path, top_k=4).retrieve(
                 queries
             )
-        return local + federal
+        return federal
 
 
 @router.post("/questions")
@@ -361,6 +409,10 @@ async def ask(
     query = payload.query
     if payload.document_id:
         doc = document_record(request, principal, payload.document_id)
+        if not store(request).source_available(principal, doc):
+            raise HTTPException(
+                409, "Sync or index this source successfully before asking about it"
+            )
         query = f"Contract: {doc['title']}. Request: {query}"
     if payload.finding_id:
         matches = [
@@ -424,10 +476,26 @@ def connections(request: Request, principal: Principal, settings: Configuration)
         "connections": store(request).list(principal, "connection"),
         "shared_folder_available": bool(settings.workspace_import_root),
         "sharepoint_available": bool(settings.graph_connector_secret_arn),
-        "automatic_sync_seconds": 0,
+        "automatic_sync_seconds": settings.workspace_sync_seconds,
+        "search": "OpenSearch hybrid" if settings.workspace_search_enabled else "Local lexical",
+        "document_storage": "S3" if settings.workspace_source_bucket else "Local SQLite",
         "persistence": "DynamoDB" if settings.workspace_table else "Local SQLite",
         "security_domain": principal.security_domain,
     }
+
+
+@router.post("/connections/sharepoint/check")
+def check_sharepoint(principal: Principal, settings: Configuration):
+    from app.sharepoint import check_connection
+
+    try:
+        return check_connection(settings, principal)[2]
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            503, "SharePoint check failed. Verify credentials and selected-site read grant."
+        ) from error
 
 
 def allowed_folder(settings, relative):
@@ -446,8 +514,8 @@ def connect(
 ):
     if payload.provider == "shared-folder":
         allowed_folder(settings, payload.folder)
-    elif not settings.graph_connector_secret_arn:
-        raise HTTPException(409, "SharePoint requires an administrator-configured Graph secret.")
+    else:
+        check_sharepoint(principal, settings)
     return store(request).save(
         principal,
         "connection",
@@ -468,7 +536,7 @@ def source_files(connection, settings, principal):
                 continue
             key = str(path.relative_to(root))
             if path.stat().st_size > settings.max_upload_bytes:
-                yield key, None, "File exceeds upload size limit"
+                yield key, None, "File exceeds upload size limit", {}
                 continue
             try:
                 data = path.read_bytes()
@@ -477,44 +545,16 @@ def source_files(connection, settings, principal):
                     if path.suffix.lower() in {".pdf", ".docx"}
                     else parsed_text(path.name, data.decode("utf-8"))
                 )
-                yield key, doc, None
+                yield key, doc, None, {"raw_bytes": data}
             except (ValueError, UnicodeError, OSError):
-                yield key, None, "Document could not be parsed"
+                yield key, None, "Document could not be parsed", {}
     else:
-        import boto3
+        from app.sharepoint import source_files as sharepoint_files
 
-        from ingestion.graph import GraphClient, GraphDeltaConnector
-
-        value = boto3.client("secretsmanager", region_name=settings.aws_region).get_secret_value(
-            SecretId=settings.graph_connector_secret_arn
-        )["SecretString"]
-        config = json.loads(value)
-        client = GraphClient(
-            client_id=config["client_id"],
-            client_secret=config["client_secret"],
-            tenant_id=config["tenant_id"],
-            graph_base_url=config.get("graph_base_url", "https://graph.microsoft.us/v1.0"),
-            token_url=config.get("token_url"),
-        )
-        connector = GraphDeltaConnector(
-            client, drive_id=config["drive_id"], corpus="lens", default_acl_principals=()
-        )
-        # Full listing on each sync makes delete reconciliation reliable across interrupted jobs.
-        batch = connector.changes()
-        for event in batch.events:
-            doc = event.document
-            if doc is None or not (set(doc.acl_principals) & principal.acl_principals):
-                continue
-            if doc.security_label not in {"public", principal.security_domain}:
-                continue
-            yield (
-                doc.document_id,
-                parsed_text(doc.provenance.get("name", doc.document_id), doc.text),
-                None,
-            )
+        yield from sharepoint_files(connection, settings, principal)
 
 
-def sync_connection(db, principal, connection_id, settings):
+def sync_connection(db, principal, connection_id, settings, lease=None):
     connection = db.get(principal, connection_id)
     counts = {"added": 0, "updated": 0, "unchanged": 0, "removed": 0}
     errors = []
@@ -525,7 +565,9 @@ def sync_connection(db, principal, connection_id, settings):
             if d.get("connection_id") == connection_id
         }
         seen = set()
-        for key, document, error in source_files(connection, settings, principal):
+        for key, document, error, provenance in source_files(connection, settings, principal):
+            if lease and db.get(principal, connection_id)["sync_lease"] != lease:
+                return
             seen.add(key)
             if error:
                 errors.append({"file": key, "message": error})
@@ -538,12 +580,13 @@ def sync_connection(db, principal, connection_id, settings):
                 old
                 and old["sha256"] == document.sha256
                 and not old.get("deleted")
-                and old.get("status") != "source-error"
+                and old.get("status") == "ready"
+                and old.get("source_version") == provenance.get("source_version")
             ):
                 counts["unchanged"] += 1
                 continue
             try:
-                save_document(
+                saved = save_document(
                     db,
                     principal,
                     document,
@@ -552,7 +595,10 @@ def sync_connection(db, principal, connection_id, settings):
                     record_id=old["id"] if old else None,
                     connection_id=connection_id,
                     source_key=key,
+                    **provenance,
                 )
+                if saved["status"] == "index-failed":
+                    errors.append({"file": key, "message": saved["index_error"]})
                 counts["updated" if old else "added"] += 1
             except HTTPException as error:
                 errors.append({"file": key, "message": str(error.detail)})
@@ -579,7 +625,10 @@ def sync_connection(db, principal, connection_id, settings):
             ],
             last_sync=now(),
         )
-    db.save(principal, "connection", connection, connection_id)
+    latest = db.get(principal, connection_id)
+    if lease and latest.get("sync_lease") != lease:
+        return
+    db.save(principal, "connection", connection, connection_id, latest["revision"])
     db.event(
         principal,
         "connection.synced",
@@ -599,11 +648,12 @@ def sync(
     item = store(request).get(principal, connection_id)
     if item["kind"] != "connection":
         raise HTTPException(404, "Connection not found")
-    if item["status"] == "syncing":
-        raise HTTPException(409, "A sync is already running")
-    item["status"] = "syncing"
-    updated = store(request).save(principal, "connection", item, connection_id, item["revision"])
-    tasks.add_task(sync_connection, store(request), principal, connection_id, settings)
+    from app.workspace_sync import claim
+
+    updated = claim(store(request), principal, item)
+    tasks.add_task(
+        sync_connection, store(request), principal, connection_id, settings, updated["sync_lease"]
+    )
     return updated
 
 
@@ -616,7 +666,12 @@ def library(request: Request, principal: Principal, settings: Configuration, q: 
             retrieval = FederalCorpusRetrieval(settings.local_corpus_path)
             corpus = retrieval.manifest()
             if q.strip():
-                evidence = [e.model_dump(mode="json") for e in retrieval.retrieve([q[:1000]])]
+                found = (
+                    store(request).search.retrieve_federal([q[:1000]])
+                    if store(request).search
+                    else retrieval.retrieve([q[:1000]])
+                )
+                evidence = [e.model_dump(mode="json") for e in found]
         except (RuntimeError, OSError):
             corpus = None
     catalog_path = Path(__file__).resolve().parents[1] / "knowledge/source_catalog.json"

@@ -719,11 +719,16 @@ resource "aws_ecs_task_definition" "app" {
       { name = "ENTERPRISE_INDEX", value = local.j2_enterprise_index },
       { name = "DOCUMENT_REGISTRY_TABLE", value = aws_dynamodb_table.j2_documents.name },
       { name = "WORKSPACE_TABLE", value = aws_dynamodb_table.lens_workspace.name },
+      { name = "WORKSPACE_SOURCE_BUCKET", value = aws_s3_bucket.j2_sources.id },
+      { name = "WORKSPACE_KMS_KEY_ARN", value = aws_kms_key.j2.arn },
+      { name = "WORKSPACE_SEARCH_ENABLED", value = "true" },
+      { name = "WORKSPACE_SEARCH_INDEX", value = "${var.security_domain}-lens-workspace-v1" },
+      { name = "WORKSPACE_SYNC_SECONDS", value = var.lens_graph_secret_arn == "" ? "0" : "900" },
       { name = "ENTITY_REGISTRY_TABLE", value = aws_dynamodb_table.j2_entities.name },
       { name = "CHANGE_EVENT_TABLE", value = aws_dynamodb_table.j2_changes.name },
       { name = "J2_INGESTION_QUEUE_URL", value = aws_sqs_queue.j2_ingestion.url },
       { name = "SOURCE_BUCKET", value = aws_s3_bucket.j2_sources.id },
-      { name = "GRAPH_CONNECTOR_SECRET_ARN", value = try(aws_secretsmanager_secret.graph_connector[0].arn, "") },
+      { name = "GRAPH_CONNECTOR_SECRET_ARN", value = var.lens_graph_secret_arn },
       { name = "HOME", value = "/tmp/home" },
     ]
     secrets = [

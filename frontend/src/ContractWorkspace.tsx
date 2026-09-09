@@ -299,6 +299,13 @@ export function ContractWorkspace({
         </span>
       </div>
       <ErrorNotice error={error} />
+      {(doc.status === "index-failed" || doc.status === "indexing") && <section className="notice">
+        <p>This document is saved, but search indexing is incomplete.</p>
+        <button disabled={busy} onClick={() => {
+          setBusy(true); void workspace.reindex(doc.id).then(() => reload())
+            .catch(e => setError(message(e))).finally(() => setBusy(false));
+        }}>Retry indexing</button>
+      </section>}
       <div className="tabs" role="tablist" aria-label="Contract workspace">
         {[
           ["findings", "Findings"],

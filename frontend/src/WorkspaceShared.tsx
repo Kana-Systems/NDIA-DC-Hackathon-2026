@@ -94,7 +94,7 @@ export function Decision({
               setBusy(true);
               void workspace
                 .export(item.id)
-                .then((data) => downloadJson(data, `lens-${item.id}.json`))
+                .then((data) => downloadJson(data, `kana-legal-${item.id}.json`))
                 .catch((e) => setError(message(e)))
                 .finally(() => setBusy(false));
             }}

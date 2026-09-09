@@ -31,6 +31,17 @@ async function login() {
 }
 describe('Connected Lens workspace', () => {
   afterEach(() => { cleanup(); apiClient.logout(); vi.restoreAllMocks() })
+  it('uses Kana Legal branding on sign-in and the workspace', async () => {
+    mockApi()
+    const user = userEvent.setup()
+    render(<App />)
+    expect(screen.getByText('Kana Legal')).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/workspace password/i), 'test-password')
+    await user.click(screen.getByRole('button', { name: /enter workspace/i }))
+    await screen.findByRole('heading', { name: /your contract workspace/i })
+    expect(screen.getByText('Legal', { selector: 'b' })).toBeInTheDocument()
+    expect(screen.queryByText('Acquisition Lens')).not.toBeInTheDocument()
+  })
   it('authenticates and loads only persisted documents without seeded samples', async () => {
     const fetch = mockApi([doc])
     await login()

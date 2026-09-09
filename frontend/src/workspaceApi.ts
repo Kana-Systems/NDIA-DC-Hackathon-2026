@@ -74,6 +74,8 @@ export interface Connection extends RecordBase {
   errors: { file: string; message: string }[];
 }
 export interface Connections {
+  search?: string;
+  document_storage?: string;
   connections: Connection[];
   shared_folder_available: boolean;
   sharepoint_available: boolean;
@@ -169,6 +171,9 @@ export const workspace = {
     }),
   questions: () => call<Question[]>("/questions"),
   connections: () => call<Connections>("/connections"),
+  checkSharePoint: () => call<{site: string; library: string; url: string; status: string}>(
+    "/connections/sharepoint/check", "POST"),
+  reindex: (id: string) => call<Document>(`/documents/${id}/reindex`, "POST"),
   connect: (body: {
     name: string;
     provider: string;

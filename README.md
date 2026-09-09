@@ -1,6 +1,6 @@
-# Government Contract Review Demo
+# Kana Legal
 
-## Combined Acquisition Lens application
+## Connected contract intelligence application
 
 The integrated application combines the React judge interface with this
 repository's parsing, identity, ingestion, and model infrastructure.

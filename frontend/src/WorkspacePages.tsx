@@ -22,6 +22,7 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
   const [category, setCategory] = useState("reference");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sharepointStatus, setSharepointStatus] = useState("");
   const load = useCallback(async () => {
     try {
       const [result, history] = await Promise.all([
@@ -106,6 +107,8 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
       <div className="status-bar">
         <Chip>{data?.persistence || "Checking persistence"}</Chip>
         <Chip>{data?.security_domain || "Checking domain"}</Chip>
+        {data?.document_storage && <Chip>Documents: {data.document_storage}</Chip>}
+        {data?.search && <Chip>Search: {data.search}</Chip>}
         <span>
           {data?.automatic_sync_seconds
             ? `Automatic sync: ${data.automatic_sync_seconds}s`
@@ -113,6 +116,17 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
         </span>
       </div>
       <div className="two-columns">
+        <section className="panel">
+          <h2>SharePoint connection check</h2>
+          <p>Credentials stay in AWS Secrets Manager. This checks the selected site and library read access before any files are imported.</p>
+          <button disabled={busy || !data?.sharepoint_available} onClick={() => {
+            setBusy(true); setError(""); setSharepointStatus("");
+            void workspace.checkSharePoint().then(r => setSharepointStatus(`${r.site} / ${r.library}: connected`))
+              .catch(e => setError(message(e))).finally(() => setBusy(false));
+          }}>Test SharePoint access</button>
+          {sharepointStatus && <p role="status">{sharepointStatus}</p>}
+          {!data?.sharepoint_available && <p>Administrator setup required: app registration, selected-site read grant, and AWS connector secret.</p>}
+        </section>
         <form className="panel" onSubmit={connect}>
           <h2>Add a connection</h2>
           <label>
