@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Check, Download, FileText } from "lucide-react";
 import { workspace } from "./workspaceApi";
 import type { RecordBase } from "./workspaceApi";
@@ -38,6 +38,7 @@ export function Decision({
   const [note, setNote] = useState(item.note || "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const readiness = item.readiness;
   async function act(decision: string) {
     setBusy(true);
     setError("");
@@ -56,10 +57,19 @@ export function Decision({
         <h3>Human review</h3>
         <Chip>{item.decision}</Chip>
       </div>
+      {item.decided_by && <p className="decision-attribution">Last decision by {item.decided_by}
+        {item.decided_at && <> · <time dateTime={item.decided_at}>{new Date(item.decided_at).toLocaleString()}</time></>}
+      </p>}
       <p>
-        Approval records your review of this output—not a determination of legal
-        compliance.
+        Check the source passages and recommendations, then record your judgment.
+        Approval records a human review of this output.
       </p>
+      {readiness && (
+        <div className={`readiness-status ${readiness.can_approve ? "ready" : "blocked"}`}>
+          <strong>{readiness.can_export ? "Ready to export" : readiness.can_approve ? "Ready for your decision" : "Action needed before approval"}</strong>
+          {readiness.blockers.map(blocker => <p key={blocker.code}>{blocker.message}</p>)}
+        </div>
+      )}
       <label>
         Decision note
         <textarea
@@ -73,7 +83,7 @@ export function Decision({
       <ErrorNotice error={error} />
       <div className="actions">
         <button
-          disabled={busy || note.trim().length < 3}
+          disabled={busy || note.trim().length < 3 || readiness?.can_approve === false}
           onClick={() => void act("approved")}
         >
           <Check size={16} />
@@ -89,7 +99,7 @@ export function Decision({
         {item.decision === "approved" && item.kind !== "entity" && (
           <button
             className="quiet"
-            disabled={busy}
+            disabled={busy || readiness?.can_export === false}
             onClick={() => {
               setBusy(true);
               void workspace
@@ -106,4 +116,36 @@ export function Decision({
       </div>
     </div>
   );
+}
+
+/** Manual activation preserves drafts while arrow keys move among tabs. */
+export function WorkspaceTabs({ label, tabs, value, onChange, children }: {
+  label: string;
+  tabs: readonly (readonly [string, string])[];
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  const id = useId();
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  return <>
+    <div className="tabs" role="tablist" aria-label={label}>
+      {tabs.map(([key, title], index) => <button
+        key={key} type="button" role="tab" id={`${id}-tab-${key}`}
+        aria-controls={`${id}-panel-${key}`} aria-selected={value === key}
+        tabIndex={value === key ? 0 : -1} className={value === key ? "active" : ""}
+        ref={element => { refs.current[index] = element; }}
+        onClick={() => onChange(key)}
+        onKeyDown={event => {
+          const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+            : event.key === "ArrowLeft" ? (index - 1 + tabs.length) % tabs.length
+            : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
+          if (next !== null) { event.preventDefault(); refs.current[next]?.focus(); }
+        }}
+      >{title}</button>)}
+    </div>
+    {tabs.map(([key]) => <div key={key} role="tabpanel" id={`${id}-panel-${key}`} aria-labelledby={`${id}-tab-${key}`} hidden={value !== key} tabIndex={0}>
+      {value === key ? children : null}
+    </div>)}
+  </>;
 }

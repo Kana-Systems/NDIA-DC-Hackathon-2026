@@ -75,8 +75,7 @@ def test_benchmark_schema_is_synthetic_evaluation_only_and_complete():
     adversarial = benchmarks[1]
     assert all(benchmark.training_use == "prohibited" for benchmark in benchmarks)
     assert all(
-        benchmark.synthetic and not benchmark.production_evidence
-        for benchmark in benchmarks
+        benchmark.synthetic and not benchmark.production_evidence for benchmark in benchmarks
     )
     assert all(
         case["split"] == "evaluation"
@@ -86,9 +85,9 @@ def test_benchmark_schema_is_synthetic_evaluation_only_and_complete():
         for case in cases
     )
     assert set(adversarial.required_adversarial_coverage) == set(ADVERSARIAL_CASE_TYPES)
-    assert {
-        kind for case in adversarial.cases for kind in case.adversarial_types
-    } == set(ADVERSARIAL_CASE_TYPES)
+    assert {kind for case in adversarial.cases for kind in case.adversarial_types} == set(
+        ADVERSARIAL_CASE_TYPES
+    )
     long_case = next(case for case in cases if "long-document" in case["adversarial_types"])
     assert MIN_LONG_DOCUMENT_CHARACTERS <= len(long_case["text"]) <= MAX_DOCUMENT_CHARACTERS
     applicability_case = next(
@@ -176,9 +175,7 @@ def test_citation_grading_is_exhaustive_and_fail_closed():
     with pytest.raises(ValueError, match="omitted"):
         validate_grade(omitted, case, report)
     assert measure(case, report, omitted)["unsupported_citations"] == 1
-    supported = omitted.model_copy(
-        update={"citation_supported_finding_ids": ["f-1"]}
-    )
+    supported = omitted.model_copy(update={"citation_supported_finding_ids": ["f-1"]})
     validate_grade(supported, case, report)
     assert measure(case, report, supported)["unsupported_citations"] == 0
 

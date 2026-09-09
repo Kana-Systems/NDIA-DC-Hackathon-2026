@@ -75,4 +75,36 @@ describe('explicit offline demo authorization', () => {
       filters: { source_types: [], document_ids: [], entity_ids: [], effective_after: null },
     })
   })
+
+  it('does not expire a renewed session when an older request returns a late 401', async () => {
+    let rejectOld!: (response: Response) => void
+    let logins = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (String(input).endsWith('/api/auth/login')) {
+        return Promise.resolve(new Response(JSON.stringify({ access_token: `token-${++logins}` })))
+      }
+      if (String(input) === '/old') return new Promise(resolve => { rejectOld = resolve })
+      return Promise.resolve(new Response(JSON.stringify({ ok: true })))
+    })
+    const { apiClient, request, onSessionExpired } = await import('./client')
+    const expired = vi.fn()
+    const unsubscribe = onSessionExpired(expired)
+    await apiClient.login('password')
+    const oldRequest = request('/old', undefined, true).catch(error => error)
+    await apiClient.login('password')
+    rejectOld(new Response('{}', { status: 401 }))
+    await oldRequest
+    await request('/new', undefined, true)
+    expect(expired).not.toHaveBeenCalled()
+    expect((fetchMock.mock.calls.at(-1)?.[1]?.headers as Record<string, string>).Authorization).toBe('Bearer token-2')
+    unsubscribe()
+  })
+  it('shows field validation messages without echoing submitted input', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      detail: [{ loc: ['body', 'metadata', 'agency'], msg: 'Field required', input: 'do-not-echo-document-content' }],
+    }), { status: 422 }))
+    const { request } = await import('./client')
+    await expect(request('/validation')).rejects.toThrow('metadata · agency: Field required')
+    await expect(request('/validation')).rejects.not.toThrow('do-not-echo-document-content')
+  })
 })

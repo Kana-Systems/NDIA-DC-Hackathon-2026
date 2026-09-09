@@ -139,6 +139,19 @@ def test_review_approval_export_and_stale_metadata_gate(setup):
     assert approved.status_code == 200
     exported = client.get(f"/api/workspace/records/{review['id']}/export").json()
     assert exported["external_write_performed"] is False
+    from app.workspace_export import WorkspaceExport, record_digest
+
+    WorkspaceExport.model_validate(exported)
+    assert exported["schema_version"] == "1.1"
+    assert exported["record_sha256"] == record_digest(exported["record"])
+    assert exported["record_sha256"] != record_digest(exported["record"] | {"note": "Changed"})
+    assert exported["sources"][0]["document_id"] == doc["id"]
+    assert exported["sources"][0]["role"] == "context"
+    assert exported["sources"][0]["security_label"] == "demo"
+    assert (
+        client.get("/api/workspace/export-schema").json()["properties"]["schema_version"]["const"]
+        == "1.1"
+    )
     metadata = doc["metadata"] | {"agency": "Changed agency"}
     assert (
         client.put(
@@ -288,6 +301,246 @@ def test_auth_required_for_all_workspace_reads():
         "events",
         "library",
         "structured-records",
+        "export-schema",
     ):
         assert client.get(f"/api/workspace/{path}").status_code == 401
     assert client.get("/ui/").status_code == 404
+
+
+def test_readiness_matches_export_and_stale_reviews_can_be_returned(setup):
+    client, _, _, _ = setup
+    doc = add(client)
+    review = client.post(f"/api/workspace/documents/{doc['id']}/review").json()
+    status = client.get("/api/workspace/reviews").json()[0]["readiness"]
+    assert status["can_approve"] and not status["can_export"]
+    assert not status["blockers"]
+    client.put(
+        f"/api/workspace/documents/{doc['id']}/metadata",
+        json={"metadata": doc["metadata"] | {"agency": "Changed"}, "revision": doc["revision"]},
+    )
+    status = client.get("/api/workspace/reviews").json()[0]["readiness"]
+    assert not status["can_approve"]
+    assert status["blockers"][0]["code"] == "metadata_changed"
+    url = f"/api/workspace/records/{review['id']}/decision"
+    body = {"note": "Acquisition details need a fresh review", "revision": review["revision"]}
+    assert client.post(url, json=body | {"decision": "approved"}).status_code == 409
+    assert client.post(url, json=body | {"decision": "rejected"}).status_code == 200
+
+
+def test_context_version_is_checked_even_when_answer_only_cites_another_source(setup):
+    client, _, _, principal = setup
+    context = add(client)
+    reference = add(
+        client, "Original source says North Company warranty is twelve months. " * 3, "reference"
+    )
+    question = client.post(
+        "/api/workspace/questions",
+        json={"query": "What is the warranty?", "document_id": context["id"]},
+    ).json()
+    assert question["document_version"] == context["version"]
+    db = client.app.state.workspace_store
+    # Model output may cite only the reference, although the selected contract is context.
+    evidence = [e for e in question["response"]["evidence"] if e["document_id"] == reference["id"]]
+    assert evidence
+    question["response"]["evidence"] = evidence
+    question["response"]["statements"] = [
+        {
+            "text": "The warranty is twelve months.",
+            "grounding_status": "verified",
+            "citation_ids": [evidence[0]["evidence_id"]],
+        }
+    ]
+    db.save(principal, "question", question, question["id"], question["revision"])
+    record = client.post(
+        "/api/workspace/structured-records",
+        json={
+            "question_id": question["id"],
+            "title": "Warranty memo",
+        },
+    ).json()
+    assert record["document_version"] == context["version"]
+    assert client.get("/api/workspace/structured-records").json()[0]["readiness"]["can_approve"]
+    context["version"] = "new-version"
+    db.save(principal, "document", context, context["id"], context["revision"])
+    status = client.get("/api/workspace/structured-records").json()[0]["readiness"]
+    assert not status["can_approve"]
+    assert status["blockers"][0]["code"] == "source_changed"
+    result = client.post(
+        f"/api/workspace/records/{record['id']}/decision",
+        json={
+            "decision": "approved",
+            "note": "Checked the evidence",
+            "revision": record["revision"],
+        },
+    )
+    assert result.status_code == 409
+
+
+@pytest.mark.parametrize("citations", [[], ["missing-citation"]])
+def test_verified_label_alone_does_not_allow_export(setup, citations):
+    client, _, _, principal = setup
+    db = client.app.state.workspace_store
+    record = db.save(
+        principal,
+        "structured-record",
+        {
+            "title": "Invalid provenance",
+            "decision": "approved",
+            "document_id": None,
+            "content": {
+                "evidence": [],
+                "statements": [
+                    {
+                        "text": "Unsupported assertion",
+                        "grounding_status": "verified",
+                        "citation_ids": citations,
+                    }
+                ],
+            },
+        },
+    )
+    response = client.get(f"/api/workspace/records/{record['id']}/export")
+    assert response.status_code == 409
+    status = client.get("/api/workspace/structured-records").json()[0]["readiness"]
+    assert status["blockers"][0]["code"] == "unresolved_citations"
+
+
+def test_readiness_does_not_hydrate_source_bodies(setup):
+    client, _, _, principal = setup
+    from app.workspace_readiness import ReadinessEvaluator
+
+    doc = add(client)
+    db = client.app.state.workspace_store
+    entity = {"kind": "entity", "links": [{"document_id": doc["id"], "version": doc["version"]}]}
+    evaluator = ReadinessEvaluator(db, principal)
+    with patch.object(db, "get", wraps=db.get) as get:
+        assert evaluator.evaluate(entity)["can_approve"]
+        assert evaluator.evaluate(entity)["can_approve"]
+    get.assert_called_once_with(principal, doc["id"], hydrate=False)
+
+
+def test_source_readiness_distinguishes_indexed_text_from_current_access(setup):
+    client, _, _, principal = setup
+    db = client.app.state.workspace_store
+    doc = add(client)
+    # A record may retain indexed text after its originating connection disappears.
+    doc.update(source_provider="sharepoint", connection_id="missing-connection")
+    db.save(principal, "document", doc, doc["id"], doc["revision"])
+    listed = client.get("/api/workspace/documents").json()[0]
+    assert listed["status"] == "ready" and listed["available"] is False
+    detail = client.get(f"/api/workspace/documents/{doc['id']}").json()
+    assert detail["available"] is False and "parsed" not in detail
+    assert detail["text"] == doc["text"]
+    result = client.post(f"/api/workspace/documents/{doc['id']}/review")
+    assert result.status_code == 409
+    entity = db.save(
+        principal,
+        "entity",
+        {
+            "links": [{"document_id": doc["id"], "version": doc["version"]}],
+            "decision": "draft",
+        },
+    )
+    status = client.get("/api/workspace/entities").json()[0]["readiness"]
+    assert status["blockers"][0]["code"] == "source_not_ready"
+    assert not status["can_approve"]
+    assert (
+        client.post(
+            f"/api/workspace/records/{entity['id']}/decision",
+            json={
+                "decision": "approved",
+                "note": "Checked",
+                "revision": entity["revision"],
+            },
+        ).status_code
+        == 409
+    )
+
+
+def test_whitespace_inputs_do_not_start_generation_or_create_approvals(setup):
+    client, _, _, _ = setup
+    assert (
+        client.post(
+            "/api/workspace/documents",
+            json={
+                "title": "Empty input",
+                "text": " " * 100,
+            },
+        ).status_code
+        == 422
+    )
+    assert client.post("/api/workspace/questions", json={"query": "   "}).status_code == 422
+    doc = add(client)
+    review = client.post(f"/api/workspace/documents/{doc['id']}/review").json()
+    assert (
+        client.post(
+            f"/api/workspace/records/{review['id']}/decision",
+            json={
+                "decision": "approved",
+                "note": "   ",
+                "revision": review["revision"],
+            },
+        ).status_code
+        == 422
+    )
+
+
+def test_missing_and_foreign_evidence_is_reported_without_leaking_source_details(setup):
+    client, _, _, principal = setup
+    db = client.app.state.workspace_store
+    foreign = db.save(
+        PrincipalContext(subject="bob", security_domain="demo"),
+        "document",
+        {
+            "title": "Other reviewers private title",
+            "status": "ready",
+            "version": "v1",
+        },
+    )
+    for record_id in (foreign["id"], "missing-document"):
+        db.save(
+            principal,
+            "entity",
+            {
+                "decision": "draft",
+                "links": [{"document_id": record_id, "version": "v1"}],
+            },
+        )
+    response = client.get("/api/workspace/entities")
+    assert response.status_code == 200
+    assert "Other reviewers private title" not in response.text
+    assert all(
+        e["readiness"]["blockers"][0]["code"] == "source_unavailable" for e in response.json()
+    )
+
+
+def test_export_does_not_merge_unrelated_legacy_citations_without_document_ids(setup):
+    client, _, _, principal = setup
+    from app.adapters import EVIDENCE_CATALOG
+
+    evidence = [e.model_dump(mode="json") for e in EVIDENCE_CATALOG[:2]]
+    record = client.app.state.workspace_store.save(
+        principal,
+        "structured-record",
+        {
+            "title": "Legacy reviewed record",
+            "decision": "approved",
+            "document_id": None,
+            "content": {
+                "evidence": evidence,
+                "statements": [
+                    {
+                        "text": "Check both sources",
+                        "grounding_status": "verified",
+                        "citation_ids": [e["evidence_id"] for e in evidence],
+                    }
+                ],
+            },
+        },
+    )
+    response = client.get(f"/api/workspace/records/{record['id']}/export")
+    assert response.status_code == 200
+    sources = response.json()["sources"]
+    assert len(sources) == 2
+    assert {s["title"] for s in sources} == {e["title"] for e in evidence}
+    assert all(s["document_id"] == "" and s["version"] == "" for s in sources)

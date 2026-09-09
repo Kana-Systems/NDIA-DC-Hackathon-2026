@@ -3,6 +3,14 @@
 `/lens/` is the only interface; `/` redirects there and `/ui/` returns 404.
 The six pages share persistent server-side records instead of separate demos.
 
+The September 9 workflow improvements add priority/evidence triage, a shared
+source-readiness gate, research context snapshots, session renewal that preserves
+open forms, and portable version 1.1 exports. See
+[the judging walkthrough](docs/JUDGING_REVIEW.md) and
+[the handoff contract](docs/INTEROPERABILITY.md). Older context-bound research
+records require a fresh generation before approval/export because they lack the
+context version snapshot.
+
 | Page | What works | Use case |
 | --- | --- | --- |
 | Contracts | Upload/paste, metadata, trained classifier + Bedrock review, findings, citations, contextual questions, history and human approval | Contract review |

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronRight,
@@ -13,33 +13,39 @@ import { emptyMetadata } from "./types";
 import type { AcquisitionMetadata } from "./types";
 import { workspace } from "./workspaceApi";
 import type { Document, Review, Question } from "./workspaceApi";
-import { Chip, Decision, Empty, ErrorNotice } from "./WorkspaceShared";
+import { Chip, Decision, Empty, ErrorNotice, WorkspaceTabs } from "./WorkspaceShared";
+import { FindingList } from "./FindingList";
 import { message } from "./workspaceUtils";
 
 export function Research({
   documentId,
   findingId,
   documents,
+  onClearFinding,
 }: {
   documentId: string | null;
   findingId?: string;
   documents: Document[];
+  onClearFinding?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState("answer");
   const [history, setHistory] = useState<Question[]>([]);
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const queryRef = useRef<HTMLTextAreaElement>(null);
+  const [savedQuestions, setSavedQuestions] = useState<string[]>([]);
   const reload = useCallback(
     () =>
       workspace
         .questions()
         .then((rows) =>
-          setHistory(rows.filter((row) => row.document_id === documentId)),
+          setHistory(rows.filter((row) => row.document_id === documentId && (!findingId || row.finding_id === findingId))),
         )
         .catch((e) => setError(message(e))),
-    [documentId],
+    [documentId, findingId],
   );
   useEffect(() => {
     let active = true;
@@ -47,7 +53,7 @@ export function Research({
       .questions()
       .then((rows) => {
         if (active)
-          setHistory(rows.filter((row) => row.document_id === documentId));
+          setHistory(rows.filter((row) => row.document_id === documentId && (!findingId || row.finding_id === findingId)));
       })
       .catch((e) => {
         if (active) setError(message(e));
@@ -55,11 +61,14 @@ export function Research({
     return () => {
       active = false;
     };
-  }, [documentId]);
+  }, [documentId, findingId]);
   async function ask(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
+    setGenerating(true);
     setError("");
+    setNotice("");
     try {
       await workspace.ask(query, mode, documentId, findingId);
       setQuery("");
@@ -68,6 +77,7 @@ export function Research({
       setError(message(e));
     } finally {
       setBusy(false);
+      setGenerating(false);
     }
   }
   return (
@@ -80,6 +90,7 @@ export function Research({
             : "Context: your indexed sources and official regulatory corpus"}
         </span>
         {findingId && <Chip>Selected finding</Chip>}
+        {findingId && onClearFinding && <button className="text-button" onClick={onClearFinding}>All contract questions</button>}
       </div>
       <form className="panel" onSubmit={ask}>
         <div className="section-heading">
@@ -93,9 +104,19 @@ export function Research({
             </select>
           </label>
         </div>
+        <div className="research-starters" role="group" aria-label="Research starting points">
+          {[
+            ["Summarize obligations", "summary", "Summarize the obligations, responsible parties, and deadlines in the available sources. Cite each statement and identify what is missing."],
+            ["Find evidence gaps", "answer", "Which material claims or requirements need more supporting evidence? Identify gaps and cite the available sources without assuming missing facts."],
+            ["Draft a decision memo", "draft", "Draft a decision memo with the mission question, key findings, supporting citations, uncertainties, and recommended next actions for a human reviewer."],
+          ].map(([label, output, prompt]) => <button key={label} type="button" className="quiet" disabled={busy} onClick={() => {
+            setMode(output); setQuery(prompt); queryRef.current?.focus();
+          }}>{label}</button>)}
+        </div>
         <label>
           Question or drafting request
           <textarea
+            ref={queryRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             rows={3}
@@ -118,6 +139,7 @@ export function Research({
           )}
           Ask / generate
         </button>
+        {generating && <p role="status" className="generation-status">Retrieving sources and preparing a cited draft. Your question will be saved with the result.</p>}
       </form>
       {notice && (
         <p role="status" className="notice">
@@ -136,6 +158,11 @@ export function Research({
             <Chip>{q.response.synthesis_mode}</Chip>
           </div>
           <p className="answer-text">{q.response.answer}</p>
+          <div className="answer-provenance">
+            <span>{q.response.evidence.length} sources</span>
+            <span>{q.response.statements.filter(s => s.grounding_status === "verified").length} of {q.response.statements.length} statements citation-linked</span>
+            {q.created_at && <time dateTime={q.created_at}>{new Date(q.created_at).toLocaleString()}</time>}
+          </div>
           <details>
             <summary>Inspect statements and citations</summary>
             {q.response.statements.map((s, i) => (
@@ -166,22 +193,23 @@ export function Research({
           </details>
           <button
             className="quiet"
-            disabled={busy || !q.response.statements.length}
+            disabled={busy || !q.response.statements.length || savedQuestions.includes(q.id)}
             onClick={() => {
               setBusy(true);
               void workspace
                 .record(q.id, q.query.slice(0, 200))
-                .then(() =>
+                .then(() => {
+                  setSavedQuestions(ids => [...ids, q.id]);
                   setNotice(
                     "Draft saved to Reviewed records. Analyst approval is required before export.",
-                  ),
-                )
+                  );
+                })
                 .catch((e) => setError(message(e)))
                 .finally(() => setBusy(false));
             }}
           >
             <Layers size={16} />
-            Save as reviewable record
+            {savedQuestions.includes(q.id) ? "Saved to Reviewed records" : "Save as reviewable record"}
           </button>
         </article>
       ))}
@@ -208,7 +236,8 @@ export function ContractWorkspace({
   const [tab, setTab] = useState("findings");
   const [findingId, setFindingId] = useState<string>();
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState("");
+  const busy = Boolean(operation);
   const reload = useCallback(async () => {
     try {
       const [updated, all] = await Promise.all([
@@ -240,12 +269,14 @@ export function ContractWorkspace({
   }, [initial.id]);
   const latest = reviews[0];
   async function saveAndReview(run: boolean) {
-    setBusy(true);
+    if (busy) return;
+    setOperation("save");
     setError("");
     try {
       const updated = await workspace.metadata(doc.id, metadata, doc.revision);
       setDoc(updated);
       if (run) {
+        setOperation("review");
         await workspace.review(doc.id);
         setTab("findings");
       }
@@ -254,7 +285,7 @@ export function ContractWorkspace({
     } catch (e) {
       setError(message(e));
     } finally {
-      setBusy(false);
+      setOperation("");
     }
   }
   return (
@@ -274,7 +305,7 @@ export function ContractWorkspace({
         </div>
         {doc.category === "contract" && (
           <button
-            disabled={busy}
+            disabled={busy || doc.available === false || doc.status !== "ready"}
             onClick={() => {
               if (!doc.metadata) setTab("details");
               else void saveAndReview(true);
@@ -299,32 +330,27 @@ export function ContractWorkspace({
         </span>
       </div>
       <ErrorNotice error={error} />
+      {doc.available === false && doc.status === "ready" && <p className="notice">
+        Source access needs a fresh sync. Open Sources → Data connections and sync the connection before reviewing.
+      </p>}
+      {busy && <div className="notice work-progress" role="status">
+        <LoaderCircle className="spin" size={18} />
+        <div><strong>{operation === "review" ? "Reviewing contract" : operation === "index" ? "Retrying source indexing" : "Saving acquisition details"}</strong>
+          {operation === "review" && <p>Checking clauses, retrieving evidence, and preparing findings. This can take a few minutes.</p>}
+        </div>
+      </div>}
       {(doc.status === "index-failed" || doc.status === "indexing") && <section className="notice">
         <p>This document is saved, but search indexing is incomplete.</p>
         <button disabled={busy} onClick={() => {
-          setBusy(true); void workspace.reindex(doc.id).then(() => reload())
-            .catch(e => setError(message(e))).finally(() => setBusy(false));
+          setOperation("index"); void workspace.reindex(doc.id).then(() => reload())
+            .catch(e => setError(message(e))).finally(() => setOperation(""));
         }}>Retry indexing</button>
       </section>}
-      <div className="tabs" role="tablist" aria-label="Contract workspace">
-        {[
-          ["findings", "Findings"],
-          ["document", "Document"],
-          ["research", "Ask this contract"],
-          ["details", "Acquisition details"],
-          ["history", "Review history"],
-        ].map(([key, label]) => (
-          <button
-            role="tab"
-            aria-selected={tab === key}
-            className={tab === key ? "active" : ""}
-            key={key}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabs label="Contract workspace" value={tab} onChange={setTab} tabs={[
+        ["findings", "Findings"], ["document", "Document"],
+        ["research", "Ask this contract"], ["details", "Acquisition details"],
+        ["history", "Review history"],
+      ]}>
       {tab === "details" && (
         <form
           className="panel"
@@ -344,7 +370,7 @@ export function ContractWorkspace({
             <button
               type="button"
               className="quiet"
-              disabled={busy}
+              disabled={busy || doc.available === false || doc.status !== "ready"}
               onClick={() => void saveAndReview(true)}
             >
               Save and run review
@@ -372,6 +398,7 @@ export function ContractWorkspace({
           documentId={doc.id}
           findingId={findingId}
           documents={documents}
+          onClearFinding={() => setFindingId(undefined)}
         />
       )}
       {tab === "history" && (
@@ -430,54 +457,13 @@ export function ContractWorkspace({
                   </p>
                 )}
               </div>
-              {latest.analysis.findings.map((f) => (
-                <article key={f.id} className="panel finding">
-                  <div className="section-heading">
-                    <span className={`severity ${f.severity}`}>
-                      {f.severity}
-                    </span>
-                    <small>{f.category}</small>
-                  </div>
-                  <h2>{f.title}</h2>
-                  <blockquote>
-                    {f.excerpt || "No matching passage was returned."}
-                  </blockquote>
-                  <h3>Why it matters</h3>
-                  <p>{f.explanation}</p>
-                  <h3>Recommended next step</h3>
-                  <p>{f.recommendation}</p>
-                  <details>
-                    <summary>{f.citations.length} supporting sources</summary>
-                    {f.citations.map((c, i) => (
-                      <blockquote key={i}>
-                        <strong>
-                          {c.title} · {c.section}
-                        </strong>
-                        <p>{c.excerpt}</p>
-                        {c.url && /^https?:\/\//.test(c.url) && (
-                          <a href={c.url} target="_blank" rel="noreferrer">
-                            Open original source
-                          </a>
-                        )}
-                      </blockquote>
-                    ))}
-                  </details>
-                  <button
-                    className="quiet"
-                    onClick={() => {
-                      setFindingId(f.id);
-                      setTab("research");
-                    }}
-                  >
-                    <MessageSquare size={16} />
-                    Ask about this finding
-                  </button>
-                </article>
-              ))}
+              <FindingList key={latest.id} findings={latest.analysis.findings} onAsk={id => {
+                setFindingId(id); setTab("research");
+              }} />
             </section>
             <aside>
               <section className="panel">
-                <Decision item={latest} onChange={() => void reload()} />
+                <Decision key={`${latest.id}:${latest.revision}`} item={latest} onChange={() => void reload()} />
               </section>
               <section className="panel">
                 <h3>Evidence, not certainty</h3>
@@ -500,6 +486,7 @@ export function ContractWorkspace({
             </aside>
           </div>
         ))}
+      </WorkspaceTabs>
     </>
   );
 }

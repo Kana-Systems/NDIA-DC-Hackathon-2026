@@ -85,9 +85,7 @@ class TextExpansion(BaseModel):
 class CaseAcquisitionMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    solicitation_number: str = Field(
-        default="SYNTHETIC-EVAL", min_length=1, max_length=100
-    )
+    solicitation_number: str = Field(default="SYNTHETIC-EVAL", min_length=1, max_length=100)
     contract_type: ContractType = ContractType.FIRM_FIXED_PRICE
     estimated_value: float = Field(default=1_000_000, ge=0)
     set_aside: str = Field(default="None", max_length=100)
@@ -123,9 +121,7 @@ class BenchmarkCase(BaseModel):
     forbidden_claims: list[str] = Field(default_factory=list, max_length=20)
     acceptable_action: str = Field(min_length=1, max_length=4000)
     adversarial_types: list[AdversarialCaseType] = Field(default_factory=list, max_length=9)
-    acquisition_metadata: CaseAcquisitionMetadata = Field(
-        default_factory=CaseAcquisitionMetadata
-    )
+    acquisition_metadata: CaseAcquisitionMetadata = Field(default_factory=CaseAcquisitionMetadata)
 
     @model_validator(mode="after")
     def validate_case(self):
@@ -136,13 +132,8 @@ class BenchmarkCase(BaseModel):
             raise ValueError("Adversarial types must be unique within a case")
         text = self.materialized_text()
         if len(text) > MAX_DOCUMENT_CHARACTERS:
-            raise ValueError(
-                f"Materialized case exceeds {MAX_DOCUMENT_CHARACTERS} characters"
-            )
-        if (
-            "long-document" in self.adversarial_types
-            and len(text) < MIN_LONG_DOCUMENT_CHARACTERS
-        ):
+            raise ValueError(f"Materialized case exceeds {MAX_DOCUMENT_CHARACTERS} characters")
+        if "long-document" in self.adversarial_types and len(text) < MIN_LONG_DOCUMENT_CHARACTERS:
             raise ValueError(
                 "Long-document cases must materialize to at least "
                 f"{MIN_LONG_DOCUMENT_CHARACTERS} characters"
@@ -152,9 +143,7 @@ class BenchmarkCase(BaseModel):
     def materialized_text(self):
         if self.text_expansion is None:
             return self.text
-        repeated = "\n".join(
-            [self.text_expansion.text] * self.text_expansion.repetitions
-        )
+        repeated = "\n".join([self.text_expansion.text] * self.text_expansion.repetitions)
         parts = (
             (repeated, self.text)
             if self.text_expansion.position == "before"
@@ -173,9 +162,7 @@ class BenchmarkDefinition(BaseModel):
 
     schema_version: str = Field(min_length=1, max_length=20)
     benchmark_id: str = Field(min_length=1, max_length=200)
-    benchmark_type: Literal["synthetic-contrast", "synthetic-adversarial"] = (
-        "synthetic-contrast"
-    )
+    benchmark_type: Literal["synthetic-contrast", "synthetic-adversarial"] = "synthetic-contrast"
     label_status: str = Field(min_length=1, max_length=200)
     training_use: Literal["prohibited"]
     synthetic: Literal[True] = True
@@ -193,14 +180,10 @@ class BenchmarkDefinition(BaseModel):
             raise ValueError("Benchmark case IDs must be unique")
         if "synthetic" not in self.label_status.lower():
             raise ValueError("Synthetic benchmark labels must be identified as synthetic")
-        if len(self.required_adversarial_coverage) != len(
-            set(self.required_adversarial_coverage)
-        ):
+        if len(self.required_adversarial_coverage) != len(set(self.required_adversarial_coverage)):
             raise ValueError("Required adversarial coverage must be unique")
         coverage = {
-            adversarial_type
-            for case in self.cases
-            for adversarial_type in case.adversarial_types
+            adversarial_type for case in self.cases for adversarial_type in case.adversarial_types
         }
         if self.benchmark_type == "synthetic-adversarial":
             if set(self.required_adversarial_coverage) != set(ADVERSARIAL_CASE_TYPES):
@@ -210,8 +193,7 @@ class BenchmarkDefinition(BaseModel):
         missing = set(self.required_adversarial_coverage) - coverage
         if missing:
             raise ValueError(
-                "Benchmark is missing required adversarial coverage: "
-                + ", ".join(sorted(missing))
+                "Benchmark is missing required adversarial coverage: " + ", ".join(sorted(missing))
             )
         return self
 
@@ -271,11 +253,7 @@ def select_cases(
 def validate_execution(cases, repeats, variants, max_requests=DEFAULT_MAX_REQUESTS):
     if not 1 <= len(cases) <= MAX_CASES:
         raise ValueError(f"Case count must be from 1 through {MAX_CASES}")
-    if (
-        not isinstance(repeats, int)
-        or isinstance(repeats, bool)
-        or not 1 <= repeats <= MAX_REPEATS
-    ):
+    if not isinstance(repeats, int) or isinstance(repeats, bool) or not 1 <= repeats <= MAX_REPEATS:
         raise ValueError(f"Repeats must be from 1 through {MAX_REPEATS}")
     variants = tuple(variants)
     if not variants or len(variants) != len(set(variants)):
@@ -351,24 +329,17 @@ def references(case, corpus):
     for query in case["reference_queries"]:
         for item in retrieval.retrieve([query]):
             if item.document_id in case["source_documents"]:
-                results[item.document_id].setdefault(
-                    item.evidence_id, item.model_dump(mode="json")
-                )
+                results[item.document_id].setdefault(item.evidence_id, item.model_dump(mode="json"))
     if case.get("require_all_source_documents") and any(
         not results[document_id] for document_id in case["source_documents"]
     ):
         missing = [
-            document_id
-            for document_id in case["source_documents"]
-            if not results[document_id]
+            document_id for document_id in case["source_documents"] if not results[document_id]
         ]
         raise ValueError(
-            f"Missing required reference documents for {case['id']}: "
-            + ", ".join(missing)
+            f"Missing required reference documents for {case['id']}: " + ", ".join(missing)
         )
-    passages = {
-        document_id: list(documents.values()) for document_id, documents in results.items()
-    }
+    passages = {document_id: list(documents.values()) for document_id, documents in results.items()}
     selected = []
     for position in range(10):
         for document_id in case["source_documents"]:
@@ -398,9 +369,7 @@ def validate_grade(grade, case, report):
             raise ValueError("Grader invented finding IDs")
     supported = set(grade.citation_supported_finding_ids)
     unsupported = set(grade.unsupported_finding_ids)
-    cited = {
-        item["finding_id"] for item in report["findings"] if item.get("citation_ids")
-    }
+    cited = {item["finding_id"] for item in report["findings"] if item.get("citation_ids")}
     if supported & unsupported:
         raise ValueError("Contradictory citation grade")
     if supported - cited:
@@ -505,9 +474,7 @@ def _slice_summaries(rows, variants, key):
     return {
         value: {
             "case_ids": sorted({row["case_id"] for row in rows if row.get(key) == value}),
-            "variants": _variant_summary(
-                [row for row in rows if row.get(key) == value], variants
-            ),
+            "variants": _variant_summary([row for row in rows if row.get(key) == value], variants),
             "paired_case_success_delta": _paired_delta(
                 [row for row in rows if row.get(key) == value]
             ),
@@ -520,9 +487,7 @@ def paired_summary(rows, case_count, repeats, variants=VARIANTS):
     variants = tuple(variants)
     variant_summary = _variant_summary(rows, variants)
     expected_rows = case_count * repeats * len(variants)
-    unique_rows = {
-        (row.get("case_id"), row.get("repeat"), row.get("variant")) for row in rows
-    }
+    unique_rows = {(row.get("case_id"), row.get("repeat"), row.get("variant")) for row in rows}
     return {
         "variants": variant_summary,
         "paired_case_success_delta": _paired_delta(rows),
@@ -542,8 +507,7 @@ def paired_summary(rows, case_count, repeats, variants=VARIANTS):
         "promotion_allowed": False,
         "production_evidence": False,
         "benefit_status": (
-            "provisional machine-graded synthetic engineering evidence; "
-            "never production evidence"
+            "provisional machine-graded synthetic engineering evidence; never production evidence"
         ),
         "release_blockers": [
             "No independent human-reviewed federal benchmark",
@@ -575,11 +539,7 @@ def synthetic_engineering_gate(summary):
             value = candidate.get(metric)
             if value is None and metric == "unsupported_citations":
                 value = candidate.get("unsupported")
-            if (
-                not isinstance(value, int)
-                or isinstance(value, bool)
-                or value != 0
-            ):
+            if not isinstance(value, int) or isinstance(value, bool) or value != 0:
                 blockers.append(f"Classifier arm must have zero {label}")
     if any(
         not isinstance(item.get("failures"), int)
@@ -711,9 +671,7 @@ def main():
         "max_api_attempts": args.max_requests,
         "expected_api_attempts": expected_api_attempts,
         "label_status": benchmarks[0].label_status,
-        "benchmark_label_statuses": [
-            benchmark.label_status for benchmark in benchmarks
-        ],
+        "benchmark_label_statuses": [benchmark.label_status for benchmark in benchmarks],
         "training_use": "prohibited",
         "synthetic": True,
         "production_evidence": False,
@@ -749,9 +707,7 @@ def main():
         return
     schedule = build_schedule(cases, args.repeats, args.variants, args.max_requests)
     random.Random(17).shuffle(schedule)
-    services = {
-        variant: ModelReviewService(settings, variant=variant) for variant in args.variants
-    }
+    services = {variant: ModelReviewService(settings, variant=variant) for variant in args.variants}
     guard = CostGuard(
         args.output / "cost-ledger.json",
         args.budget_usd,

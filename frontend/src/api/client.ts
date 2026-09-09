@@ -13,6 +13,12 @@ export const demoModeEnabled = import.meta.env.VITE_ENABLE_DEMO_MODE === 'true'
 const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD
 let accessToken: string | null = null
 let demoAuthorized = false
+const sessionExpiryListeners = new Set<() => void>()
+
+export function onSessionExpired(listener: () => void) {
+  sessionExpiryListeners.add(listener)
+  return () => { sessionExpiryListeners.delete(listener) }
+}
 
 interface BackendCitation { title: string; url: string | null; section?: string; verification_status?: string; excerpt?: string }
 interface BackendFinding {
@@ -30,6 +36,7 @@ export class ApiError extends Error {
 }
 
 export async function request<T>(path: string, init?: RequestInit, protectedRoute = false): Promise<T> {
+  const requestToken = accessToken
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
@@ -38,14 +45,23 @@ export async function request<T>(path: string, init?: RequestInit, protectedRout
       signal: controller.signal,
       headers: {
         ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-        ...(protectedRoute && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(protectedRoute && requestToken ? { Authorization: `Bearer ${requestToken}` } : {}),
         ...init?.headers,
       },
     })
     if (!response.ok) {
+      if (response.status === 401 && protectedRoute && requestToken && requestToken === accessToken) {
+        accessToken = null
+        sessionExpiryListeners.forEach(listener => listener())
+      }
       let detail: unknown = ''
       try { detail = ((await response.json()) as { detail?: unknown }).detail ?? '' } catch { /* response may not be JSON */ }
-      const safeDetail = typeof detail === 'string' ? detail : ''
+      const safeDetail = typeof detail === 'string' ? detail : Array.isArray(detail)
+        ? detail.slice(0, 3).map(issue => {
+          if (!issue || typeof issue !== 'object' || typeof issue.msg !== 'string') return ''
+          const field = Array.isArray(issue.loc) ? issue.loc.filter((part: unknown) => typeof part === 'string' && part !== 'body').join(' · ').replaceAll('_', ' ') : ''
+          return field ? `${field}: ${issue.msg}` : issue.msg
+        }).filter(Boolean).join('. ') : ''
       throw new ApiError(response.status === 401 ? 'That password was not accepted, or your session has expired.' : safeDetail || 'The service could not complete this request.', response.status)
     }
     return await response.json() as T

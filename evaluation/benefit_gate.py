@@ -44,11 +44,7 @@ def gate(summary, *, real_reviewed_cases, distinct_families, artifacts_match, al
         isinstance(value, int) and not isinstance(value, bool) and value >= 0
         for value in (real_reviewed_cases, distinct_families)
     )
-    if (
-        not valid_case_counts
-        or real_reviewed_cases < 30
-        or distinct_families < 10
-    ):
+    if not valid_case_counts or real_reviewed_cases < 30 or distinct_families < 10:
         blockers.append("Need at least 30 non-synthetic reviewed cases across 10 contract families")
     interval = summary.get("paired_case_success_delta")
     lower_95 = interval.get("lower_95") if isinstance(interval, dict) else None
@@ -75,9 +71,7 @@ def gate(summary, *, real_reviewed_cases, distinct_families, artifacts_match, al
             baseline_value = baseline.get(metric)
             candidate_value = candidate.get(metric)
             if not all(
-                isinstance(value, int)
-                and not isinstance(value, bool)
-                and value >= 0
+                isinstance(value, int) and not isinstance(value, bool) and value >= 0
                 for value in (baseline_value, candidate_value)
             ):
                 blockers.append(f"Missing required metric: {metric}")

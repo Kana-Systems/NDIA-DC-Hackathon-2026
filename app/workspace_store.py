@@ -158,7 +158,12 @@ class WorkspaceStore:
         if doc.get("source_provider") == "sharepoint":
             from app.workspace_sync import elapsed
 
-            connection = self.get(principal, doc["connection_id"], hydrate=False)
+            try:
+                connection = self.get(principal, doc["connection_id"], hydrate=False)
+            except HTTPException as error:
+                if error.status_code != 404:
+                    raise
+                return False
             if connection.get("status") == "failed":
                 return False
             if elapsed(connection.get("last_sync")) > 3600:

@@ -16,9 +16,7 @@ def _binary_matrix(values: object, name: str) -> np.ndarray:
         matrix = matrix.reshape(0, 0) if matrix.size == 0 else matrix.reshape(-1, 1)
     if matrix.ndim != 2:
         raise ValueError(f"{name} must be a one- or two-dimensional binary array")
-    if not (
-        np.issubdtype(matrix.dtype, np.bool_) or np.issubdtype(matrix.dtype, np.number)
-    ):
+    if not (np.issubdtype(matrix.dtype, np.bool_) or np.issubdtype(matrix.dtype, np.number)):
         raise TypeError(f"{name} must contain booleans or binary numbers")
     if matrix.size and not np.all((matrix == 0) | (matrix == 1)):
         raise ValueError(f"{name} must contain only binary values")
@@ -57,11 +55,7 @@ def _fbeta(
 ) -> np.ndarray:
     beta_squared = beta**2
     numerator = (1 + beta_squared) * np.asarray(true_positive)
-    denominator = (
-        numerator
-        + beta_squared * np.asarray(false_negative)
-        + np.asarray(false_positive)
-    )
+    denominator = numerator + beta_squared * np.asarray(false_negative) + np.asarray(false_positive)
     return _ratio(numerator, denominator)
 
 
@@ -202,12 +196,8 @@ def classification_metrics(
     micro_true_positive = int(true_positive.sum())
     micro_false_positive = int(false_positive.sum())
     micro_false_negative = int(false_negative.sum())
-    micro_precision = float(
-        _ratio(micro_true_positive, micro_true_positive + micro_false_positive)
-    )
-    micro_recall = float(
-        _ratio(micro_true_positive, micro_true_positive + micro_false_negative)
-    )
+    micro_precision = float(_ratio(micro_true_positive, micro_true_positive + micro_false_positive))
+    micro_recall = float(_ratio(micro_true_positive, micro_true_positive + micro_false_negative))
     micro_f1 = float(
         _fbeta(
             micro_true_positive,
@@ -289,14 +279,9 @@ def multilabel_metrics(
     expected_items = [list(item) for item in expected]
     if len(predicted_items) != len(expected_items):
         raise ValueError("predicted and expected collections must have equal length")
-    label_order = list(
-        dict.fromkeys(label for labels in expected_items for label in labels)
-    )
+    label_order = list(dict.fromkeys(label for labels in expected_items for label in labels))
     label_order.extend(
-        label
-        for labels in predicted_items
-        for label in labels
-        if label not in label_order
+        label for labels in predicted_items for label in labels if label not in label_order
     )
     pairs = [
         (set(predicted), set(expected))
@@ -350,9 +335,7 @@ def length_slices(
     return {
         "short": [index for index, length in enumerate(lengths) if length <= short_max],
         "medium": [
-            index
-            for index, length in enumerate(lengths)
-            if short_max < length <= medium_max
+            index for index, length in enumerate(lengths) if short_max < length <= medium_max
         ],
         "long": [index for index, length in enumerate(lengths) if length > medium_max],
     }
@@ -365,10 +348,7 @@ def length_slice_masks(
     """Return boolean masks corresponding to :func:`length_slices`."""
 
     slices = length_slices(values, **kwargs)
-    return {
-        name: np.isin(np.arange(len(values)), indices)
-        for name, indices in slices.items()
-    }
+    return {name: np.isin(np.arange(len(values)), indices) for name, indices in slices.items()}
 
 
 def label_frequency_slices(
@@ -427,9 +407,7 @@ def _length_metrics(
         medium_max=medium_max,
     ).items():
         selected = np.asarray(indices, dtype=int)
-        selected_probabilities = (
-            probabilities[selected] if probabilities is not None else None
-        )
+        selected_probabilities = probabilities[selected] if probabilities is not None else None
         report[name] = {
             "examples": len(indices),
             "metrics": classification_metrics(
@@ -463,9 +441,7 @@ def _frequency_metrics(
     report = {}
     for name, selected_labels in groups.items():
         columns = [indices[label] for label in selected_labels]
-        selected_probabilities = (
-            probabilities[:, columns] if probabilities is not None else None
-        )
+        selected_probabilities = probabilities[:, columns] if probabilities is not None else None
         report[name] = {
             "labels": selected_labels,
             "metrics": classification_metrics(
@@ -596,9 +572,7 @@ def document_cluster_bootstrap_delta(
     expected_matrix = _binary_matrix(expected, "expected")
     incumbent_matrix = _binary_matrix(incumbent, "incumbent")
     candidate_matrix = _binary_matrix(candidate, "candidate")
-    if not (
-        expected_matrix.shape == incumbent_matrix.shape == candidate_matrix.shape
-    ):
+    if not (expected_matrix.shape == incumbent_matrix.shape == candidate_matrix.shape):
         raise ValueError("expected, incumbent, and candidate must have the same shape")
     if len(document_ids) != expected_matrix.shape[0]:
         raise ValueError("document_ids must match the number of examples")

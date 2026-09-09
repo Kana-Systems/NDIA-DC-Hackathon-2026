@@ -83,9 +83,7 @@ class CostGuard:
             or isinstance(max_requests, bool)
             or not 1 <= max_requests <= HARD_MAX_REQUESTS
         ):
-            raise ValueError(
-                f"Request limit must be an integer from 1 through {HARD_MAX_REQUESTS}"
-            )
+            raise ValueError(f"Request limit must be an integer from 1 through {HARD_MAX_REQUESTS}")
         self.path = Path(path)
         self.limit = float(limit_usd)
         self.max_requests = max_requests
@@ -108,10 +106,7 @@ class CostGuard:
                 or not 1 <= stored_max_requests <= HARD_MAX_REQUESTS
             ):
                 raise ValueError("Malformed cost ledger limits")
-            if (
-                stored_limit != self.limit
-                or stored_max_requests != self.max_requests
-            ):
+            if stored_limit != self.limit or stored_max_requests != self.max_requests:
                 raise ValueError("Cannot change the budget or request limit of an existing run")
             for record in ledger["requests"]:
                 accounted = record.get("accounted_usd")

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Database, ExternalLink, Plus, RefreshCw, Search } from "lucide-react";
+import { Database, Download, ExternalLink, Plus, RefreshCw, Search } from "lucide-react";
 import { workspace } from "./workspaceApi";
 import type {
   AuditEvent,
@@ -11,7 +11,8 @@ import type {
   StructuredRecord,
 } from "./workspaceApi";
 import { Chip, Decision, Empty, ErrorNotice } from "./WorkspaceShared";
-import { message } from "./workspaceUtils";
+import { downloadJson, message, sourceStatus } from "./workspaceUtils";
+import { FindingList } from "./FindingList";
 
 export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
   const [data, setData] = useState<Connections>();
@@ -323,8 +324,8 @@ export function LibraryPage({ onOpen }: { onOpen: (doc: Document) => void }) {
           <p className="overline">Know what your answer rests on.</p>
           <h1>Source library</h1>
           <p>
-            Indexed documents are usable evidence. Catalog links are discovery
-            resources, not ingestion claims.
+            Inspect source readiness and provenance before using a document as
+            evidence. Browse the catalog to discover additional references.
           </p>
         </div>
       </div>
@@ -401,6 +402,7 @@ export function LibraryPage({ onOpen }: { onOpen: (doc: Document) => void }) {
               <button
                 className="contract-row"
                 key={d.id}
+                disabled={d.status === "source-error"}
                 onClick={() => onOpen(d)}
               >
                 <Database size={18} />
@@ -410,7 +412,7 @@ export function LibraryPage({ onOpen }: { onOpen: (doc: Document) => void }) {
                     {d.category} · Version {d.version} · Owner {d.owner}
                   </small>
                 </span>
-                <Chip>Indexed</Chip>
+                <Chip>{sourceStatus(d)}</Chip>
               </button>
             ))}
           </section>
@@ -644,7 +646,7 @@ export function EntitiesPage({ documents }: { documents: Document[] }) {
                   <small>Source version {l.version}</small>
                 </blockquote>
               ))}
-              <Decision item={item} onChange={() => void load()} />
+              <Decision key={`${item.id}:${item.revision}`} item={item} onChange={() => void load()} />
             </article>
           ))}
         </section>
@@ -653,10 +655,13 @@ export function EntitiesPage({ documents }: { documents: Document[] }) {
   );
 }
 
-export function RecordsPage() {
+export function RecordsPage({ documents = [], onOpen }: { documents?: Document[]; onOpen?: (doc: Document) => void }) {
   const [items, setItems] = useState<StructuredRecord[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [schemaBusy, setSchemaBusy] = useState(false);
   const load = useCallback(async () => {
     try {
       const [records, result] = await Promise.all([
@@ -665,10 +670,18 @@ export function RecordsPage() {
       ]);
       setItems(records);
       setReviews(result);
+      setError("");
     } catch (e) {
       setError(message(e));
     }
   }, []);
+  const all = [...items, ...reviews];
+  const matches = (item: StructuredRecord | Review) => {
+    const title = "title" in item ? item.title : documents.find(d => d.id === item.document_id)?.title || item.analysis.document_summary;
+    return (filter === "all" || (filter === "pending" ? item.decision === "draft"
+      : filter === "blocked" ? item.readiness?.can_approve === false : item.readiness?.can_export === true)) &&
+      title.toLowerCase().includes(query.trim().toLowerCase());
+  };
   useEffect(() => {
     let active = true;
     void Promise.all([workspace.records(), workspace.reviews()])
@@ -696,19 +709,40 @@ export function RecordsPage() {
             source-linked JSON record.
           </p>
         </div>
+        <div className="actions">
+        <button className="quiet" disabled={schemaBusy} onClick={() => {
+          setSchemaBusy(true); setError("");
+          void workspace.exportSchema().then(schema => downloadJson(schema, "kana-legal-export-schema-1.1.json"))
+            .catch(error => setError(message(error))).finally(() => setSchemaBusy(false));
+        }}><Download size={16} />Export schema</button>
         <button className="quiet" onClick={() => void load()}>
           <RefreshCw size={16} />
           Refresh
         </button>
+        </div>
       </div>
       <ErrorNotice error={error} />
+      <div className="panel triage-toolbar">
+        <div className="filter-buttons" role="group" aria-label="Filter review records">
+          {[["pending", "Needs decision", all.filter(r => r.decision === "draft").length],
+            ["blocked", "Action needed", all.filter(r => r.readiness?.can_approve === false).length],
+            ["exportable", "Ready to export", all.filter(r => r.readiness?.can_export === true).length],
+            ["all", "All records", all.length]].map(([key, label, count]) =>
+            <button key={key} className="quiet" aria-pressed={filter === key} onClick={() => setFilter(String(key))}>{label} <span className="count">{count}</span></button>
+          )}
+        </div>
+        <label className="search-box"><Search size={16} /><input aria-label="Find a review record" placeholder="Find a contract or memo" value={query} onChange={e => setQuery(e.target.value)} /></label>
+      </div>
       {!items.length && !reviews.length && (
         <Empty title="No reviewable outputs yet">
           Run a contract review, or save a cited research answer as a record.
         </Empty>
       )}
+      {all.length > 0 && !all.some(matches) && <Empty title="No records in this view">
+        Choose All records or clear the search to inspect the rest of your decision history.
+      </Empty>}
       <div className="records-grid">
-        {items.map((item) => (
+        {items.filter(matches).map((item) => (
           <article className="panel" key={item.id}>
             <Chip>Research record</Chip>
             <h2>{item.title}</h2>
@@ -724,28 +758,26 @@ export function RecordsPage() {
                 </blockquote>
               ))}
             </details>
-            <Decision item={item} onChange={() => void load()} />
+            <Decision key={`${item.id}:${item.revision}`} item={item} onChange={() => void load()} />
           </article>
         ))}
-        {reviews.map((item) => (
+        {reviews.filter(matches).map((item) => (
           <article className="panel" key={item.id}>
             <Chip>Contract review</Chip>
-            <h2>{item.analysis.findings.length} review findings</h2>
+            <h2>{documents.find(d => d.id === item.document_id)?.title || "Contract review"}</h2>
+            <p>{item.analysis.findings.length} findings · {item.analysis.overall_risk} priority</p>
             <p>{item.analysis.document_summary}</p>
             <small>
               Source version {item.document_version} · {item.analysis.engine}
             </small>
             <details>
               <summary>Inspect findings before decision</summary>
-              {item.analysis.findings.map((f) => (
-                <blockquote key={f.id}>
-                  <strong>{f.title}</strong>
-                  <p>{f.explanation}</p>
-                  <p>{f.recommendation}</p>
-                </blockquote>
-              ))}
+              <FindingList findings={item.analysis.findings} />
             </details>
-            <Decision item={item} onChange={() => void load()} />
+            {onOpen && documents.some(d => d.id === item.document_id) && <button className="text-button" onClick={() => {
+              const doc = documents.find(d => d.id === item.document_id); if (doc) onOpen(doc);
+            }}>Open contract and evidence</button>}
+            <Decision key={`${item.id}:${item.revision}`} item={item} onChange={() => void load()} />
           </article>
         ))}
       </div>

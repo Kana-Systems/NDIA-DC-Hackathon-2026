@@ -1,0 +1,108 @@
+{
+  "$defs": {
+    "SourceManifestEntry": {
+      "properties": {
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "security_label": {
+          "title": "Security Label",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "role": {
+          "default": "evidence",
+          "enum": [
+            "context",
+            "evidence",
+            "context-and-evidence"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "version",
+        "title",
+        "source",
+        "security_label"
+      ],
+      "title": "SourceManifestEntry",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1.1",
+      "default": "1.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "exported_at": {
+      "title": "Exported At",
+      "type": "string"
+    },
+    "external_write_performed": {
+      "const": false,
+      "default": false,
+      "title": "External Write Performed",
+      "type": "boolean"
+    },
+    "disclaimer": {
+      "default": "Analyst-reviewed screening output; not a compliance certification.",
+      "title": "Disclaimer",
+      "type": "string"
+    },
+    "record_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Record Sha256",
+      "type": "string"
+    },
+    "hash_format": {
+      "const": "sha256:json-sort-keys-utf8-v1",
+      "default": "sha256:json-sort-keys-utf8-v1",
+      "title": "Hash Format",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceManifestEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "record": {
+      "additionalProperties": true,
+      "title": "Record",
+      "type": "object"
+    }
+  },
+  "required": [
+    "exported_at",
+    "record_sha256",
+    "sources",
+    "record"
+  ],
+  "title": "WorkspaceExport",
+  "type": "object"
+}

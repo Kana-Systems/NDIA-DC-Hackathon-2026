@@ -11,3 +11,11 @@ export function downloadJson(data: unknown, name: string) {
 
 export const message = (error: unknown) =>
   error instanceof Error ? error.message : "The request could not be completed.";
+
+export function sourceStatus(doc: { status: string; available?: boolean }) {
+  if (doc.status === "source-error") return "Source unavailable";
+  if (doc.status === "index-failed") return "Indexing failed";
+  if (doc.status === "indexing") return "Indexing";
+  if (doc.available === false) return "Sync required";
+  return doc.status === "ready" ? "Ready" : doc.status;
+}

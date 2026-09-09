@@ -15,11 +15,12 @@ import {
   ShieldCheck,
   Link2,
 } from "lucide-react";
-import { apiClient } from "./api/client";
+import { apiClient, onSessionExpired } from "./api/client";
+import { SessionRenewal } from "./SessionRenewal";
 import { workspace } from "./workspaceApi";
 import type { Document } from "./workspaceApi";
 import { Chip, Empty, ErrorNotice } from "./WorkspaceShared";
-import { message } from "./workspaceUtils";
+import { message, sourceStatus } from "./workspaceUtils";
 import { ContractWorkspace, Research } from "./ContractWorkspace";
 import {
   ConnectionsPage,
@@ -198,6 +199,7 @@ function AddDocument({ onAdded }: { onAdded: (doc: Document) => void }) {
 }
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [page, setPage] = useState<Page>("contracts");
   const [collapsed, setCollapsed] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
@@ -209,45 +211,42 @@ export default function App() {
   const [researchDoc, setResearchDoc] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      setDocuments(await workspace.documents());
-      setError("");
-    } catch (e) {
-      setError(message(e));
-    } finally {
-      setLoading(false);
-    }
+  const documentRequest = useRef(0);
+  useEffect(() => onSessionExpired(() => setSessionExpired(true)), []);
+  const loadDocuments = useCallback(() => {
+    const request = ++documentRequest.current;
+    return workspace.documents().then(result => {
+      if (request === documentRequest.current) { setDocuments(result); setError(""); }
+    }).catch(e => {
+      if (request === documentRequest.current) setError(message(e));
+    }).finally(() => {
+      if (request === documentRequest.current) setLoading(false);
+    });
   }, []);
+  const reload = useCallback(() => {
+    setLoading(true);
+    return loadDocuments();
+  }, [loadDocuments]);
   useEffect(() => {
     if (!authenticated) return;
-    let active = true;
-    void workspace
-      .documents()
-      .then((rows) => {
-        if (active) setDocuments(rows);
-      })
-      .catch((e) => {
-        if (active) setError(message(e));
-      });
-    return () => {
-      active = false;
-    };
-  }, [authenticated]);
+    void loadDocuments();
+    return () => { documentRequest.current += 1; };
+  }, [authenticated, loadDocuments]);
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated || sessionExpired) return;
     mainRef.current?.focus({ preventScroll: true });
     window.scrollTo({ top: 0, behavior: "instant" });
-  }, [page, authenticated]);
-  if (!authenticated) return <Login onLogin={() => setAuthenticated(true)} />;
+  }, [page, authenticated, sessionExpired]);
+  if (!authenticated) return <Login onLogin={() => { setLoading(true); setAuthenticated(true); }} />;
   const contracts = documents.filter(
     (d) =>
       d.category === "contract" &&
       d.title.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <div className={`lens-workspace${collapsed ? " sidebar-collapsed" : ""}`}>
+    <>
+    {sessionExpired && <SessionRenewal onRenewed={() => setSessionExpired(false)} />}
+    <div inert={sessionExpired} className={`lens-workspace${collapsed ? " sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#workspace-main">
         Skip to workspace
       </a>
@@ -375,8 +374,8 @@ export default function App() {
                 <div className="journey">
                   <article>
                     <span>01</span>
-                    <h3>Connect</h3>
-                    <p>Bring approved documents into one place.</p>
+                    <h3>Connect your sources</h3>
+                    <p>Ingest approved folders and track source changes.</p>
                     <button
                       className="text-button"
                       onClick={() => setPage("connections")}
@@ -386,13 +385,16 @@ export default function App() {
                   </article>
                   <article>
                     <span>02</span>
-                    <h3>Review</h3>
-                    <p>Understand clauses alongside supporting evidence.</p>
+                    <h3>Research with evidence</h3>
+                    <p>Answer a mission question or draft a cited review memo.</p>
+                    <button className="text-button" onClick={() => setPage("research")}>
+                      Start research <ArrowRight size={14} />
+                    </button>
                   </article>
                   <article>
                     <span>03</span>
-                    <h3>Decide</h3>
-                    <p>Record human judgment before exporting.</p>
+                    <h3>Review and share</h3>
+                    <p>Resolve blockers, record a decision, and export sourced results.</p>
                     <button
                       className="text-button"
                       onClick={() => setPage("records")}
@@ -443,6 +445,7 @@ export default function App() {
                     <button
                       key={doc.id}
                       className="contract-row"
+                      disabled={doc.status === "source-error"}
                       onClick={() => setSelected(doc)}
                     >
                       <span className="document-icon">
@@ -455,7 +458,7 @@ export default function App() {
                           · {new Date(doc.updated_at).toLocaleDateString()}
                         </small>
                       </span>
-                      <Chip>{doc.status}</Chip>
+                      <Chip>{sourceStatus(doc)}</Chip>
                       <ChevronRight size={18} />
                     </button>
                   ))}
@@ -482,7 +485,7 @@ export default function App() {
                 >
                   <option value="">All indexed sources</option>
                   {documents
-                    .filter((d) => d.category === "contract")
+                    .filter((d) => d.available !== false && d.status === "ready")
                     .map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.title}
@@ -509,7 +512,9 @@ export default function App() {
             />
           )}
           {page === "entities" && <EntitiesPage documents={documents} />}
-          {page === "records" && <RecordsPage />}
+          {page === "records" && <RecordsPage documents={documents} onOpen={doc => {
+            setSelected(doc); setPage("contracts");
+          }} />}
         </main>
         <footer className="workspace-footer">
           <ShieldCheck size={14} />
@@ -518,5 +523,6 @@ export default function App() {
         </footer>
       </div>
     </div>
+    </>
   );
 }

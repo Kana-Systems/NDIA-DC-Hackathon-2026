@@ -18,7 +18,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.api import get_review_service
 from app.config import Settings, get_settings
@@ -35,6 +35,8 @@ from app.models import (
     PrincipalContext,
 )
 from app.parsers import DocumentParser
+from app.workspace_export import WorkspaceExport, build_export
+from app.workspace_readiness import ReadinessEvaluator
 from app.workspace_store import now
 
 router = APIRouter(prefix="/api/workspace", tags=["lens-workspace"])
@@ -78,6 +80,14 @@ class DocumentInput(BaseModel):
     category: Literal["contract", "policy", "playbook", "clause-library", "reference"] = "contract"
     metadata: AcquisitionMetadata | None = None
     source_url: str = Field(default="", max_length=2000, pattern=r"^(https?://.*)?$")
+
+    @field_validator("title", "text")
+    @classmethod
+    def meaningful_input(cls, value, info):
+        minimum = 80 if info.field_name == "text" else 1
+        if len(value.strip()) < minimum:
+            raise ValueError(f"Add at least {minimum} non-padding characters")
+        return value  # Preserve the exact supplied text for excerpts and hashes.
 
 
 def save_document(db, principal, document, category, metadata=None, **extra):
@@ -131,9 +141,13 @@ def reindex(record_id: str, request: Request, principal: Principal):
 
 @router.get("/documents")
 def documents(request: Request, principal: Principal):
+    db = store(request)
     return [
-        {k: v for k, v in item.items() if k not in {"text", "parsed"}}
-        for item in store(request).list(principal, "document")
+        {
+            **{k: v for k, v in item.items() if k not in {"text", "parsed"}},
+            "available": db.source_available(principal, item),
+        }
+        for item in db.list(principal, "document")
         if not item.get("deleted")
     ]
 
@@ -173,7 +187,11 @@ async def upload_document(
 
 @router.get("/documents/{record_id}")
 def get_document(record_id: str, request: Request, principal: Principal):
-    return document_record(request, principal, record_id)
+    item = document_record(request, principal, record_id)
+    return {
+        **{k: v for k, v in item.items() if k != "parsed"},
+        "available": store(request).source_available(principal, item),
+    }
 
 
 class MetadataInput(BaseModel):
@@ -239,15 +257,26 @@ async def review(record_id: str, request: Request, principal: Principal, setting
 
 @router.get("/reviews")
 def reviews(request: Request, principal: Principal):
-    return sorted(
-        store(request).list(principal, "review"), key=lambda r: r["created_at"], reverse=True
-    )
+    evaluator = ReadinessEvaluator(store(request), principal)
+    return [
+        evaluator.present(item)
+        for item in sorted(
+            store(request).list(principal, "review"), key=lambda r: r["created_at"], reverse=True
+        )
+    ]
 
 
 class DecisionInput(BaseModel):
     decision: Literal["approved", "rejected"]
     note: str = Field(min_length=3, max_length=2000)
     revision: int
+
+    @field_validator("note")
+    @classmethod
+    def meaningful_note(cls, value):
+        if len(value.strip()) < 3:
+            raise ValueError("Record what you checked in the decision note")
+        return value
 
 
 @router.post("/records/{record_id}/decision")
@@ -257,14 +286,6 @@ def decide(record_id: str, payload: DecisionInput, request: Request, principal: 
         raise HTTPException(422, "This record cannot be approved")
     if payload.decision == "approved":
         ensure_current_sources(item, request, principal)
-    if item["kind"] == "review":
-        document = document_record(request, principal, item["document_id"])
-        if (
-            not store(request).source_available(principal, document)
-            or document["version"] != item["document_version"]
-            or document["metadata"] != item["metadata_snapshot"]
-        ):
-            raise HTTPException(409, "Contract or acquisition details changed. Run a new review.")
     item.update(
         decision=payload.decision, note=payload.note, decided_by=principal.subject, decided_at=now()
     )
@@ -273,28 +294,19 @@ def decide(record_id: str, payload: DecisionInput, request: Request, principal: 
     return result
 
 
-@router.get("/records/{record_id}/export")
+@router.get("/export-schema")
+def export_schema(principal: Principal):
+    return WorkspaceExport.model_json_schema()
+
+
+@router.get("/records/{record_id}/export", response_model=WorkspaceExport)
 def export(record_id: str, request: Request, principal: Principal):
     item = store(request).get(principal, record_id)
     if item["kind"] not in {"review", "structured-record"} or item.get("decision") != "approved":
         raise HTTPException(409, "Approve the record before exporting.")
-    ensure_current_sources(item, request, principal)
-    if item["kind"] == "review":
-        document = document_record(request, principal, item["document_id"])
-        if (
-            not store(request).source_available(principal, document)
-            or document["version"] != item["document_version"]
-            or document["metadata"] != item["metadata_snapshot"]
-        ):
-            raise HTTPException(409, "Review is stale. Re-review the updated contract.")
+    result = build_export(item, ReadinessEvaluator(store(request), principal))
     store(request).event(principal, "record.exported", record_id, {})
-    return {
-        "schema_version": "1.0",
-        "exported_at": now(),
-        "external_write_performed": False,
-        "disclaimer": "Analyst-reviewed screening output; not a compliance certification.",
-        "record": item,
-    }
+    return result
 
 
 class QuestionInput(BaseModel):
@@ -302,6 +314,13 @@ class QuestionInput(BaseModel):
     mode: Literal["answer", "summary", "draft"] = "answer"
     document_id: str | None = None
     finding_id: str | None = None
+
+    @field_validator("query")
+    @classmethod
+    def meaningful_query(cls, value):
+        if len(value.strip()) < 2:
+            raise ValueError("Enter a question or drafting request")
+        return value
 
 
 class WorkspaceGeneration(CitedGenerationService):
@@ -314,25 +333,7 @@ class WorkspaceGeneration(CitedGenerationService):
 
 
 def ensure_current_sources(item, request, principal):
-    if item["kind"] == "entity":
-        links = item["links"]
-    elif item["kind"] == "structured-record":
-        content = item["content"]
-        if any(s["grounding_status"] != "verified" for s in content["statements"]):
-            raise HTTPException(409, "Uncited statements must be resolved before approval/export.")
-        links = [e for e in content["evidence"] if e["evidence_id"].startswith("workspace:")]
-    elif item["kind"] == "review":
-        links = [
-            e
-            for e in item["analysis"]["report"]["evidence"]
-            if e["evidence_id"].startswith("workspace:")
-        ]
-    else:
-        return
-    for link in links:
-        doc = document_record(request, principal, link["document_id"])
-        if doc["version"] != link["version"] or not store(request).source_available(principal, doc):
-            raise HTTPException(409, "Supporting source changed. Create a fresh draft.")
+    ReadinessEvaluator(store(request), principal).require_current(item)
 
 
 class WorkspaceRetrieval:
@@ -407,13 +408,18 @@ async def ask(
     payload: QuestionInput, request: Request, principal: Principal, settings: Configuration
 ):
     query = payload.query
+    document_version = None
+    workflow = "mission-support"
     if payload.document_id:
         doc = document_record(request, principal, payload.document_id)
         if not store(request).source_available(principal, doc):
             raise HTTPException(
                 409, "Sync or index this source successfully before asking about it"
             )
-        query = f"Contract: {doc['title']}. Request: {query}"
+        query = f"Source document: {doc['title']}. Request: {query}"
+        document_version = doc["version"]
+        if doc["category"] == "contract":
+            workflow = "contract-review"
     if payload.finding_id:
         matches = [
             f
@@ -432,9 +438,7 @@ async def ask(
         try:
             response = await asyncio.to_thread(
                 service.generate,
-                IntelligenceQuery(
-                    query=query[:4000], mode=payload.mode, workflow="contract-review"
-                ),
+                IntelligenceQuery(query=query[:4000], mode=payload.mode, workflow=workflow),
                 principal,
             )
         except Exception as error:
@@ -447,6 +451,7 @@ async def ask(
         {
             "query": payload.query,
             "document_id": payload.document_id,
+            "document_version": document_version,
             "finding_id": payload.finding_id,
             "response": response.model_dump(mode="json"),
         },
@@ -693,7 +698,8 @@ class EntityInput(BaseModel):
 
 @router.get("/entities")
 def entities(request: Request, principal: Principal):
-    return store(request).list(principal, "entity")
+    evaluator = ReadinessEvaluator(store(request), principal)
+    return [evaluator.present(item) for item in store(request).list(principal, "entity")]
 
 
 @router.post("/entities")
@@ -743,7 +749,8 @@ class RecordInput(BaseModel):
 
 @router.get("/structured-records")
 def records(request: Request, principal: Principal):
-    return store(request).list(principal, "structured-record")
+    evaluator = ReadinessEvaluator(store(request), principal)
+    return [evaluator.present(item) for item in store(request).list(principal, "structured-record")]
 
 
 @router.post("/structured-records")
@@ -758,6 +765,7 @@ def create_record(payload: RecordInput, request: Request, principal: Principal):
             "title": payload.title,
             "question_id": question["id"],
             "document_id": question.get("document_id"),
+            "document_version": question.get("document_version"),
             "content": question["response"],
             "decision": "draft",
             "note": "",

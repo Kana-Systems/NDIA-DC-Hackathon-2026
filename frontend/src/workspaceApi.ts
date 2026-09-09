@@ -13,6 +13,14 @@ export interface RecordBase {
   created_at: string;
   owner: string;
   security_domain: string;
+  decided_by?: string | null;
+  decided_at?: string;
+  readiness?: {
+    can_approve: boolean;
+    can_export: boolean;
+    blockers: { code: string; message: string }[];
+    checked_at: string;
+  };
 }
 export interface Document extends RecordBase {
   title: string;
@@ -24,6 +32,7 @@ export interface Document extends RecordBase {
   source_key?: string;
   source_url?: string;
   status: string;
+  available?: boolean;
 }
 export interface Review extends RecordBase {
   document_id: string;
@@ -61,6 +70,8 @@ export interface Review extends RecordBase {
 export interface Question extends RecordBase {
   query: string;
   document_id: string | null;
+  document_version?: string | null;
+  finding_id?: string | null;
   response: IntelligenceResponse;
 }
 export interface Connection extends RecordBase {
@@ -157,6 +168,7 @@ export const workspace = {
     }),
   export: (id: string) =>
     call<Record<string, unknown>>(`/records/${id}/export`),
+  exportSchema: () => call<Record<string, unknown>>("/export-schema"),
   ask: (
     query: string,
     mode: string,

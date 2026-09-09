@@ -127,9 +127,11 @@ def calibration_metrics(
     else:
         raise ValueError("multi-label calibration inputs must be one- or two-dimensional")
 
-    label_names = list(labels) if labels is not None else [
-        str(index) for index in range(expected_matrix.shape[1])
-    ]
+    label_names = (
+        list(labels)
+        if labels is not None
+        else [str(index) for index in range(expected_matrix.shape[1])]
+    )
     if len(label_names) != expected_matrix.shape[1]:
         raise ValueError("labels must match the number of probability columns")
     if len(set(label_names)) != len(label_names):
