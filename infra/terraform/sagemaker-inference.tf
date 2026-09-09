@@ -1,7 +1,30 @@
 locals {
   managed_classifier_endpoint_name = "${local.name}-llama-cuad"
   classifier_endpoint_enabled      = var.classifier_model_data_url != ""
-  classifier_model_revision        = substr(sha256(var.classifier_model_data_url), 0, 12)
+  classifier_environment = {
+    HF_HUB_OFFLINE = "1"
+    # Leave GPU headroom for all three LoRA adapters on the 24 GB L4.
+    MODEL_INFERENCE_BATCH_SIZE     = "1"
+    MMS_DEFAULT_WORKERS_PER_MODEL  = "1"
+    PYTORCH_CUDA_ALLOC_CONF        = "expandable_segments:True"
+    SAGEMAKER_CONTAINER_LOG_LEVEL  = "20"
+    SAGEMAKER_MODEL_SERVER_WORKERS = "1"
+    SAGEMAKER_PROGRAM              = "inference.py"
+    SAGEMAKER_SUBMIT_DIRECTORY     = "/opt/ml/model/code"
+    TOKENIZERS_PARALLELISM         = "false"
+    TRANSFORMERS_OFFLINE           = "1"
+  }
+  # SageMaker model/config names are immutable. Include runtime inputs so a
+  # replacement can be created before the previous resource is destroyed.
+  classifier_model_revision = substr(sha256(jsonencode({
+    artifact    = var.classifier_model_data_url
+    image       = var.classifier_inference_image_uri
+    environment = local.classifier_environment
+  })), 0, 12)
+  classifier_config_revision = substr(sha256(jsonencode({
+    model_revision = local.classifier_model_revision
+    instance_type  = var.classifier_endpoint_instance_type
+  })), 0, 12)
   effective_classifier_endpoint_name = (
     local.classifier_endpoint_enabled
     ? local.managed_classifier_endpoint_name
@@ -67,18 +90,7 @@ resource "aws_sagemaker_model" "classifier" {
   primary_container {
     image          = var.classifier_inference_image_uri
     model_data_url = var.classifier_model_data_url
-    environment = {
-      HF_HUB_OFFLINE                 = "1"
-      MODEL_INFERENCE_BATCH_SIZE     = "4"
-      MMS_DEFAULT_WORKERS_PER_MODEL  = "1"
-      PYTORCH_CUDA_ALLOC_CONF        = "expandable_segments:True"
-      SAGEMAKER_CONTAINER_LOG_LEVEL  = "20"
-      SAGEMAKER_MODEL_SERVER_WORKERS = "1"
-      SAGEMAKER_PROGRAM              = "inference.py"
-      SAGEMAKER_SUBMIT_DIRECTORY     = "/opt/ml/model/code"
-      TOKENIZERS_PARALLELISM         = "false"
-      TRANSFORMERS_OFFLINE           = "1"
-    }
+    environment    = local.classifier_environment
   }
 
   lifecycle {
@@ -111,10 +123,10 @@ resource "aws_sagemaker_model" "classifier" {
 resource "aws_sagemaker_endpoint_configuration" "classifier" {
   count = local.classifier_endpoint_enabled ? 1 : 0
 
-  # G6e uses fixed local NVMe instance storage. SageMaker does not accept
+  # G6 uses fixed local NVMe instance storage. SageMaker does not accept
   # customer-managed EBS volume size or KMS settings for this instance family;
   # the NVMe device is encrypted in hardware with per-instance keys.
-  name = "${local.managed_classifier_endpoint_name}-${local.classifier_model_revision}"
+  name = "${local.managed_classifier_endpoint_name}-${local.classifier_config_revision}"
 
   production_variants {
     variant_name                                      = "AllTraffic"

@@ -165,8 +165,20 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     assert "enable_network_isolation = true" in endpoint
     assert "instance_type" in endpoint
     assert "var.classifier_endpoint_instance_type" in endpoint
-    assert 'default     = "ml.g6e.2xlarge"' in variables
-    assert 'var.classifier_endpoint_instance_type == "ml.g6e.2xlarge"' in variables
+    assert 'default     = "ml.g6.2xlarge"' in variables
+    assert "ml.g6e." not in variables
+    assert 'var.classifier_endpoint_instance_type == "ml.g6.2xlarge"' in variables
+    assert 'MODEL_INFERENCE_BATCH_SIZE     = "1"' in endpoint
+    # Replacing a runtime must not collide with its still-existing AWS name.
+    assert "artifact    = var.classifier_model_data_url" in endpoint
+    assert "image       = var.classifier_inference_image_uri" in endpoint
+    assert "environment = local.classifier_environment" in endpoint
+    assert "model_revision = local.classifier_model_revision" in endpoint
+    assert "instance_type  = var.classifier_endpoint_instance_type" in endpoint
+    config = endpoint.split('resource "aws_sagemaker_endpoint_configuration"')[1].split(
+        'resource "aws_sagemaker_endpoint"'
+    )[0]
+    assert "${local.classifier_config_revision}" in config
     assert "volume_size_in_gb" not in endpoint
     assert "kms_key_arn" not in endpoint
     assert "NVMe device is encrypted in hardware" in endpoint

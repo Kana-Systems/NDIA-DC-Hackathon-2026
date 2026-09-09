@@ -262,13 +262,13 @@ variable "classifier_inference_image_uri" {
 }
 
 variable "classifier_endpoint_instance_type" {
-  description = "Single-GPU endpoint type for the Llama ensemble."
+  description = "GovCloud West single-GPU endpoint with 32 GiB host RAM and 24 GB GPU memory."
   type        = string
-  default     = "ml.g6e.2xlarge"
+  default     = "ml.g6.2xlarge"
 
   validation {
-    condition     = var.classifier_endpoint_instance_type == "ml.g6e.2xlarge"
-    error_message = "The reviewed ensemble deployment is pinned to ml.g6e.2xlarge."
+    condition     = var.classifier_endpoint_instance_type == "ml.g6.2xlarge"
+    error_message = "The GovCloud West ensemble deployment requires ml.g6.2xlarge with an approved endpoint quota."
   }
 }
 
