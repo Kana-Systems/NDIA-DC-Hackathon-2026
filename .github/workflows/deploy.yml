@@ -160,6 +160,46 @@ jobs:
           role-session-name: github-deploy-${{ github.run_id }}
           audience: sts.amazonaws.com
 
+      - name: Verify pinned classifier artifact
+        if: env.TF_VAR_classifier_model_data_url != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="ml/deployment/llama_r128_ensemble_artifact.json"
+          thresholds="ml/deployment/llama_r128_ensemble_thresholds.json"
+          jq -e --arg model_id "$(jq -r '.model_id' "$thresholds")" \
+            '.schema_version == "1.0" and .model_id == $model_id' \
+            "$manifest" >/dev/null
+          expected_uri="$(jq -r '.s3_uri' "$manifest")"
+          [[ "$TF_VAR_classifier_model_data_url" == "$expected_uri" ]]
+          object="${expected_uri#s3://}"
+          bucket="${object%%/*}"
+          key="${object#*/}"
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          [[ "$bucket" == "contract-review-demo-training-${account}" ]]
+          head="$(aws s3api head-object \
+            --region "$AWS_REGION" \
+            --bucket "$bucket" \
+            --key "$key" \
+            --expected-bucket-owner "$account")"
+          jq -e \
+            --arg version "$(jq -r '.s3_version_id' "$manifest")" \
+            --arg sha256 "$(jq -r '.archive_sha256' "$manifest")" \
+            --arg model_id "$(jq -r '.model_id' "$manifest")" \
+            --arg content_type "$(jq -r '.content_type' "$manifest")" \
+            --arg encryption "$(jq -r '.server_side_encryption' "$manifest")" \
+            --arg kms_key "$(jq -r '.sse_kms_key_id' "$manifest")" \
+            --argjson bytes "$(jq -r '.archive_bytes' "$manifest")" \
+            '
+              .VersionId == $version
+              and .ContentLength == $bytes
+              and .ContentType == $content_type
+              and .ServerSideEncryption == $encryption
+              and .SSEKMSKeyId == $kms_key
+              and .Metadata.sha256 == $sha256
+              and .Metadata["model-id"] == $model_id
+            ' <<<"$head" >/dev/null
+
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
@@ -260,6 +300,34 @@ jobs:
         working-directory: infra/terraform
         shell: bash
         run: terraform apply -auto-approve tfplan
+
+      - name: Verify managed classifier endpoint
+        if: env.TF_VAR_classifier_model_data_url != ''
+        working-directory: infra/terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="$(terraform output -raw classifier_endpoint_name)"
+          [[ "$endpoint" =~ ^[A-Za-z0-9](-*[A-Za-z0-9]){0,62}$ ]]
+          request="$(mktemp)"
+          response="$(mktemp)"
+          trap 'rm -f "$request" "$response"' EXIT
+          jq -cn \
+            '{texts: ["Either party may terminate this agreement for convenience."], threshold: 0.5}' \
+            >"$request"
+          aws sagemaker-runtime invoke-endpoint \
+            --region "$AWS_REGION" \
+            --endpoint-name "$endpoint" \
+            --content-type application/json \
+            --accept application/json \
+            --cli-binary-format raw-in-base64-out \
+            --body "fileb://${request}" \
+            "$response" >/dev/null
+          jq -e '
+            (.predictions | length) == 1
+            and .predictions[0].model_id == "Llama-3.1-CUAD-r128-ensemble-3seed"
+            and (.predictions[0].labels | type) == "array"
+          ' "$response" >/dev/null
 
       - name: Seed sample knowledge in OpenSearch
         if: ${{ false }} # Lens uses the packaged official corpus, not sample knowledge.

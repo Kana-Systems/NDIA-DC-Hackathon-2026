@@ -124,6 +124,28 @@ each original input and returns one prediction per input, taking each label's
 maximum score across its windows. The heuristic fallback remains a single-pass,
 deterministic baseline.
 
+`package_ensemble.py` assembles the selected seeds 17, 29, and 43 adapters with
+the exact pinned Llama base snapshot. It verifies every adapter against
+`BACKUP_MANIFEST.json`, copies the SageMaker inference code, and records hashes
+for every base-model file:
+
+```bash
+python -m ml.package_ensemble \
+  --backup-root artifacts/models/ndia-cuad-llama-best-20260909T1205Z \
+  --base-model-dir /path/to/meta-llama--Llama-3.1-8B/snapshots/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b \
+  --thresholds ml/deployment/llama_r128_ensemble_thresholds.json \
+  --output /secure-work/llama-cuad-r128-ensemble
+tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+  -C /secure-work/llama-cuad-r128-ensemble -czf /secure-work/model.tar.gz .
+sha256sum /secure-work/model.tar.gz
+```
+
+Upload the archive under
+`s3://contract-review-demo-training-ACCOUNT/inference/llama-cuad-r128-ensemble-SHA256.tar.gz`.
+The filename digest, S3 bucket policy, private inference-image digest, model
+startup verification, and response model-ID check form separate integrity
+checks. Do not send contract documents to the external training provider.
+
 `model_manifest.yaml` records provenance, intended use, and limitations.
 Classifier output is decision support, not an applicability or legal conclusion.
 # Model quality and LLM benefit experiments

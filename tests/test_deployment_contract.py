@@ -31,6 +31,9 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     thresholds = json.loads(
         (ROOT / "ml/deployment/llama_r128_ensemble_thresholds.json").read_text(encoding="utf-8")
     )
+    artifact = json.loads(
+        (ROOT / "ml/deployment/llama_r128_ensemble_artifact.json").read_text(encoding="utf-8")
+    )
 
     assert '"sagemaker:InvokeEndpoint"' in terraform
     assert '{ name = "CLASSIFIER_ENDPOINT_NAME"' in terraform
@@ -38,8 +41,11 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     assert "/srv/app/ml/deployment/llama_r128_ensemble_thresholds.json" in terraform
     assert "TF_VAR_classifier_endpoint_name" in workflow
     assert "TF_VAR_classifier_model_data_url" in workflow
+    assert "Verify pinned classifier artifact" in workflow
+    assert "aws s3api head-object" in workflow
     assert "Dockerfile.sagemaker" in workflow
-    assert 'enable_network_isolation = true' in endpoint
+    assert "sagemaker-runtime invoke-endpoint" in workflow
+    assert "enable_network_isolation = true" in endpoint
     assert "instance_type" in endpoint
     assert "var.classifier_endpoint_instance_type" in endpoint
     assert "transformers==4.57.6" in image
@@ -47,6 +53,11 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     assert thresholds["model_id"] == "Llama-3.1-CUAD-r128-ensemble-3seed"
     assert thresholds["promotion_authorized"] is False
     assert len(thresholds["member_weights_sha256"]) == 3
+    assert artifact["model_id"] == thresholds["model_id"]
+    assert artifact["archive_bytes"] > 10_000_000_000
+    assert artifact["archive_sha256"] in artifact["s3_uri"]
+    assert artifact["s3_version_id"]
+    assert artifact["server_side_encryption"] == "aws:kms"
 
 
 def test_target_objects_and_retired_ui_are_not_deployed() -> None:

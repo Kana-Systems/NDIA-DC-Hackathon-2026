@@ -239,11 +239,14 @@ variable "classifier_model_data_url" {
 variable "classifier_inference_image_uri" {
   description = "Pinned AWS GovCloud Hugging Face GPU inference container."
   type        = string
-  default     = "442386744353.dkr.ecr.us-gov-west-1.amazonaws.com/huggingface-pytorch-inference:2.6.0-transformers4.49.0-gpu-py312-cu124-ubuntu22.04"
+  default     = "442386744353.dkr.ecr.us-gov-west-1.amazonaws.com/huggingface-pytorch-inference@sha256:44ba8a83e84ec5cbbc05181ff21cad1dc9bbd592abf0584d1d382bddc2a62cec"
 
   validation {
-    condition     = var.classifier_inference_image_uri == "442386744353.dkr.ecr.us-gov-west-1.amazonaws.com/huggingface-pytorch-inference:2.6.0-transformers4.49.0-gpu-py312-cu124-ubuntu22.04"
-    error_message = "Use the reviewed AWS GovCloud Hugging Face inference image."
+    condition = (
+      var.classifier_inference_image_uri == "442386744353.dkr.ecr.us-gov-west-1.amazonaws.com/huggingface-pytorch-inference@sha256:44ba8a83e84ec5cbbc05181ff21cad1dc9bbd592abf0584d1d382bddc2a62cec"
+      || can(regex("^[0-9]{12}\\.dkr\\.ecr\\.us-gov-west-1\\.amazonaws\\.com/[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$", var.classifier_inference_image_uri))
+    )
+    error_message = "Use the reviewed AWS GovCloud base image or a private ECR image by immutable digest."
   }
 }
 

@@ -160,19 +160,6 @@ def build_ensemble(
         code.mkdir()
         for filename in ("inference.py", "heuristic.py", "windowing.py"):
             _link_or_copy(str(module_root / filename), str(code / filename))
-        (code / "requirements.txt").write_text(
-            "\n".join(
-                (
-                    "accelerate==1.14.0",
-                    "peft==0.17.1",
-                    "safetensors==0.8.0",
-                    "sentencepiece==0.2.2",
-                    "transformers==4.57.6",
-                    "",
-                )
-            ),
-            encoding="utf-8",
-        )
         deployed_members = []
         for member in selected:
             deployed_name = _deployed_member_name(member["name"])

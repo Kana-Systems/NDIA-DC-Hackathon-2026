@@ -399,12 +399,34 @@ task becomes healthy. Contract findings still combine learned clause candidates
 with deterministic keyword coverage, governed rules, retrieved authority, and
 Terra synthesis; classifier labels alone never establish applicability. Missing
 or invalid artifacts fail deployment rather than silently selecting the
-heuristic. Do not automatically promote a SageMaker output into the application.
+heuristic.
 
-Terraform intentionally does not provision a continuously running SageMaker
-endpoint. SageMaker is used only for an explicitly submitted, one-off training
-job; low-volume demo inference runs the separately approved packaged artifact
-inside Fargate.
+The optional Llama deployment uses the hash-verified three-seed
+`Llama-3.1-8B-r128-lr075-cap30-d03` ensemble only as retrieval triage. Its
+document-disjoint selection result was 78.55% micro-F1, 83.22% precision, and
+74.38% recall; it did not meet the 80% recall promotion floor. Supplying the
+SHA-256-addressed `CLASSIFIER_MODEL_DATA_URL` deployment secret makes Terraform
+create one network-isolated `ml.g6e.xlarge` SageMaker endpoint and makes ECS call
+it through least-privilege IAM. The deployment builds a private, digest-pinned
+inference image. The endpoint returns classifier candidates to the existing
+retrieval and Terra prompts; those candidates remain non-authoritative and are
+never treated as legal findings.
+
+The reviewed object URI is recorded in
+`ml/deployment/llama_r128_ensemble_artifact.json`. Set the secret to the exact
+output of:
+
+```bash
+jq -r '.s3_uri' ml/deployment/llama_r128_ensemble_artifact.json
+```
+
+Deployment verifies the current S3 version, byte count, model ID, archive hash
+metadata, and KMS encryption against that committed manifest before creating or
+updating the endpoint.
+
+Leaving `CLASSIFIER_MODEL_DATA_URL` empty creates no billable endpoint and keeps
+the packaged Legal-BERT artifact active. Clearing the secret and redeploying is
+the rollback path. A continuously running endpoint incurs hourly GPU charges.
 For the judging ablation, compare `CLASSIFIER_ENABLED=false` (rules/RAG plus
 keyword baseline) with `CLASSIFIER_ENABLED=true` (packaged classifier plus the
 same rules/RAG), using the same synthetic inputs and recording the active model

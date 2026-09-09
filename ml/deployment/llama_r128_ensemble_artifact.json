@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "model_id": "Llama-3.1-CUAD-r128-ensemble-3seed",
+  "s3_uri": "s3://contract-review-demo-training-522990662735/inference/llama-cuad-r128-ensemble-35a4c9460d9abf5f8b1f719cd2d1ed63ee396a5b4da2881dd15d5ce5c9dea8f7.tar.gz",
+  "s3_version_id": "_bGzP1NwT2o24kgOTTvQ7ufRzZU2UcEg",
+  "archive_sha256": "35a4c9460d9abf5f8b1f719cd2d1ed63ee396a5b4da2881dd15d5ce5c9dea8f7",
+  "archive_bytes": 13943015552,
+  "content_type": "application/gzip",
+  "server_side_encryption": "aws:kms",
+  "sse_kms_key_id": "arn:aws-us-gov:kms:us-gov-west-1:522990662735:key/ee4ca6ca-8569-45b7-9ae7-30aef7e5b5dc",
+  "gpu_smoke_test": {
+    "verified_at": "2026-09-09T14:25:17Z",
+    "label_count": 41,
+    "expected_top_label": "termination_for_convenience",
+    "expected_top_label_score": 0.960263
+  }
+}
