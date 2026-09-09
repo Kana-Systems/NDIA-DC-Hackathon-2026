@@ -1,4 +1,4 @@
-# Acquisition Lens frontend
+# Kana Legal frontend
 
 A React/TypeScript interface for federal contract review, connected to the repository's
 FastAPI backend. It keeps the bearer token in memory and displays actual model,

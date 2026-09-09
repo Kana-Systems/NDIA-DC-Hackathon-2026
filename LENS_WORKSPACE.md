@@ -1,4 +1,4 @@
-# Connected Acquisition Lens
+# Kana Legal
 
 `/lens/` is the only interface; `/` redirects there and `/ui/` returns 404.
 The six pages share persistent server-side records instead of separate demos.

@@ -65,7 +65,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
     <main className="lens-login">
       <section>
         <span className="wordmark">
-          <span className="lens-symbol">L</span>Acquisition Lens
+          <span className="lens-symbol">K</span>Kana Legal
         </span>
         <p className="overline">Contract intelligence, connected.</p>
         <h1>
@@ -243,11 +243,11 @@ export default function App() {
             setPage("contracts");
           }}
         >
-          <span className="lens-symbol">L</span>
+          <span className="lens-symbol">K</span>
           <span>
-            Acquisition
+            Kana
             <br />
-            <b>Lens</b>
+            <b>Legal</b>
           </span>
         </a>
         <p className="nav-label">WORKSPACE</p>

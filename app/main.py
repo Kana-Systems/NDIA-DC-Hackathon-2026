@@ -1,4 +1,4 @@
-"""ASGI entrypoint for the Acquisition Lens and its APIs."""
+"""ASGI entrypoint for Kana Legal and its APIs."""
 
 import asyncio
 import os

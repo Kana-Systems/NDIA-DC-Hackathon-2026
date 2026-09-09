@@ -17,7 +17,7 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    app_name: str = "Government Contract Review Demo"
+    app_name: str = "Kana Legal"
     workspace_username: str = Field(
         default="judge",
         validation_alias=AliasChoices("WORKSPACE_USERNAME", "GRADIO_USERNAME"),

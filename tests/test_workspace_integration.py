@@ -295,3 +295,25 @@ def test_federal_index_ranks_in_opensearch_but_verifies_original_text(context, t
     query = client.request.call_args.args[2]
     assert '"owner": "official"' in query
     assert '"security_domain": "public"' in query
+
+
+def test_explicit_far_and_dfars_identifiers_outrank_generic_question_words(context):
+    settings, _ = context
+    client = MagicMock()
+    client.request.side_effect = RuntimeError("stop after inspecting query")
+    search = WorkspaceSearch(settings, client, MagicMock())
+    with (
+        patch.object(search, "federal_index", return_value=("test-official", {})),
+        pytest.raises(RuntimeError, match="stop after inspecting query"),
+    ):
+        search.retrieve_federal(
+            ["Which official passages mention FAR 52.249-2 or DFARS 252.204-7012?"]
+        )
+    query = json.loads(client.request.call_args.args[2])["query"]["bool"]
+    exact = query["should"][1]["constant_score"]
+    assert exact["filter"]["terms"]["document_id"] == ["FAR:52.249-2", "DFARS:252.204-7012"]
+    assert exact["boost"] == 1000
+    assert query["filter"] == [
+        {"term": {"owner": "official"}},
+        {"term": {"security_domain": "public"}},
+    ]

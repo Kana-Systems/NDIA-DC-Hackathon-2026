@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -122,6 +123,27 @@ class WorkspaceSearch:
 
     def retrieve_federal(self, queries):
         index, _ = self.federal_index()
+        query_text = " ".join(queries)[:6000]
+        clauses = list(dict.fromkeys(re.findall(r"\b(?:252|52)\.\d{3}-\d+\b", query_text)))
+        should = [{"multi_match": {"query": query_text, "fields": ["title^4", "text"]}}]
+        if clauses:
+            # Citation identifiers are exact keys, not ordinary prose tokens.
+            # Prioritize the cited source over generic words such as 'official'.
+            should.append(
+                {
+                    "constant_score": {
+                        "filter": {
+                            "terms": {
+                                "document_id": [
+                                    ("DFARS:" if clause.startswith("252.") else "FAR:") + clause
+                                    for clause in clauses
+                                ]
+                            }
+                        },
+                        "boost": 1000,
+                    }
+                }
+            )
         result = self.client.request(
             "POST",
             f"{index}/_search",
@@ -135,14 +157,8 @@ class WorkspaceSearch:
                                 {"term": {"owner": "official"}},
                                 {"term": {"security_domain": "public"}},
                             ],
-                            "must": [
-                                {
-                                    "multi_match": {
-                                        "query": " ".join(queries)[:6000],
-                                        "fields": ["title^4", "text"],
-                                    }
-                                }
-                            ],
+                            "should": should,
+                            "minimum_should_match": 1,
                         },
                     },
                 }
