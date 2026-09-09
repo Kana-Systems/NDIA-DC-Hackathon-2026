@@ -21,7 +21,11 @@ source_root="/workspace/external-transfer-20260909"
 run_root="/workspace/cuad-return-20260909"
 training_dir="${CUAD_DATA_ROOT:-/workspace/data/ndia-cuad-return-data}"
 base_revision="d04e592bb4f6aa9cfee91e2e20afa771667e1d4b"
-seed=17
+seed="${SEED:-17}"
+if [[ ! "$seed" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SEED must be a positive integer" >&2
+  exit 64
+fi
 
 case "$mode" in
   maud)

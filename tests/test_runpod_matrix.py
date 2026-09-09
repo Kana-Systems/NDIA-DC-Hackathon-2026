@@ -447,3 +447,15 @@ def test_runner_executes_sequentially_without_cross_stage_resume_or_promotion(
     assert report["test_data_evaluated"] is False
     assert all(row["seeds_complete"] for row in report["aggregate_validation"])
     assert all(row["validation_mean"] is not None for row in report["aggregate_validation"])
+
+
+def test_return_transfer_runner_supports_reproducible_seed_replicates() -> None:
+    runner = (
+        Path(__file__).resolve().parents[1] / "scripts" / "run-cuad-return-transfer.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'seed="${SEED:-17}"' in runner
+    assert 'PYTHONHASHSEED="$seed"' in runner
+    assert '--seed "$seed"' in runner
+    assert 'resume="${2:-}"' in runner
+    assert "--resume-from-checkpoint" in runner
