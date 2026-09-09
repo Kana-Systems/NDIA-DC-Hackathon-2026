@@ -36,6 +36,50 @@ def test_classifier_pull_policy_matches_pinned_upstream_repository() -> None:
     )
 
 
+def test_govcloud_alb_has_allowlist_waf_and_rate_limit_controls() -> None:
+    policy_path = "scripts/iam/security-perimeter-deploy.json"
+    policy = json.loads((ROOT / policy_path).read_text())
+    statements = {statement["Sid"]: statement for statement in policy["Statement"]}
+    firewall = statements["ManageProjectWebFirewall"]
+    parameter = statements["ReadTrustedIngressParameter"]
+    waf = (ROOT / "infra/terraform/waf.tf").read_text()
+    main = (ROOT / "infra/terraform/main.tf").read_text()
+    bootstrap = (ROOT / "scripts/bootstrap-govcloud.ps1").read_text()
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+
+    assert parameter["Action"] == "ssm:GetParameter"
+    assert parameter["Resource"].endswith(":parameter/contract-review/*")
+    assert {
+        "wafv2:CreateWebACL",
+        "wafv2:AssociateWebACL",
+        "wafv2:PutLoggingConfiguration",
+        "wafv2:CreateIPSet",
+    }.issubset(firewall["Action"])
+    assert all(
+        resource == "*" or "${aws:PrincipalAccount}" in resource
+        for statement in policy["Statement"]
+        for resource in (
+            statement["Resource"]
+            if isinstance(statement["Resource"], list)
+            else [statement["Resource"]]
+        )
+    )
+    assert '"AWSManagedRulesCommonRuleSet"' in waf
+    assert '"AWSManagedRulesKnownBadInputsRuleSet"' in waf
+    assert '"AWSManagedRulesAmazonIpReputationList"' in waf
+    assert 'name     = "TrustedIngressOnly"' in waf
+    assert 'name     = "TrustedSourceRateLimit"' in waf
+    assert 'name = "authorization"' in waf
+    assert 'name = "cookie"' in waf
+    assert "aws_wafv2_web_acl_association" in waf
+    assert "local.effective_allowed_ingress_cidrs" in main
+    assert "iam/security-perimeter-deploy.json" in bootstrap
+    assert f"file://{policy_path}" in workflow
+    assert workflow.index("Ensure security perimeter deployment access") < workflow.index(
+        "Terraform plan"
+    )
+
+
 def test_production_image_packages_verified_model_and_corpus() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
@@ -45,7 +89,7 @@ def test_production_image_packages_verified_model_and_corpus() -> None:
     assert "python scripts/verify-shared-artifacts.py" in dockerfile
 
 
-def test_classifier_reuse_tracks_all_build_inputs_and_passrole_is_scoped() -> None:
+def test_classifier_reuse_tracks_build_inputs_and_deploy_policy_is_scoped() -> None:
     image = (ROOT / "Dockerfile.sagemaker").read_text()
     workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
     terraform = (ROOT / "infra/terraform/sagemaker-inference.tf").read_text()

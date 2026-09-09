@@ -334,6 +334,13 @@ try {
         '--policy-name', 'classifier-base-image-pull',
         '--policy-document', "file://$ClassifierPullPolicyPath"
     )
+    $SecurityPerimeterPolicyPath = Join-Path $PSScriptRoot 'iam/security-perimeter-deploy.json'
+    Invoke-Aws @(
+        'iam', 'put-role-policy',
+        '--role-name', $RoleName,
+        '--policy-name', 'security-perimeter-deploy',
+        '--policy-document', "file://$SecurityPerimeterPolicyPath"
+    )
 }
 finally {
     Remove-Item -Path $TempRoot -Recurse -Force -ErrorAction SilentlyContinue

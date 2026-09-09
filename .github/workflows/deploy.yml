@@ -180,6 +180,15 @@ jobs:
           role-session-name: github-deploy-${{ github.run_id }}
           audience: sts.amazonaws.com
 
+      - name: Ensure security perimeter deployment access
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws iam put-role-policy \
+            --role-name "${AWS_GOV_ROLE_ARN##*/}" \
+            --policy-name security-perimeter-deploy \
+            --policy-document file://scripts/iam/security-perimeter-deploy.json
+
       - name: Ensure classifier base image pull access
         if: env.TF_VAR_classifier_model_data_url != ''
         shell: bash

@@ -281,3 +281,25 @@ variable "allowed_ingress_cidrs" {
     error_message = "allowed_ingress_cidrs must contain valid CIDR blocks."
   }
 }
+
+variable "trusted_ingress_cidrs_parameter_name" {
+  description = "SSM parameter containing a JSON array of additional trusted IPv4 CIDRs, such as a bounded office or Wi-Fi egress pool."
+  type        = string
+  default     = "/contract-review/demo/trusted-ingress-cidrs"
+
+  validation {
+    condition     = can(regex("^/contract-review/[A-Za-z0-9._/-]+$", var.trusted_ingress_cidrs_parameter_name))
+    error_message = "trusted_ingress_cidrs_parameter_name must remain under /contract-review/."
+  }
+}
+
+variable "waf_rate_limit" {
+  description = "Maximum requests accepted from one trusted source IP during each five-minute WAF evaluation window."
+  type        = number
+  default     = 2000
+
+  validation {
+    condition     = var.waf_rate_limit >= 100 && var.waf_rate_limit <= 2000000000
+    error_message = "waf_rate_limit must be between 100 and 2,000,000,000."
+  }
+}

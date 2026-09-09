@@ -167,3 +167,18 @@ output "classifier_endpoint_name" {
   description = "Private SageMaker classifier endpoint used by the application, or null when the packaged rollback is active."
   value       = local.effective_classifier_endpoint_name == "" ? null : local.effective_classifier_endpoint_name
 }
+
+output "web_acl_arn" {
+  description = "Regional AWS WAFv2 Web ACL associated with the application load balancer."
+  value       = aws_wafv2_web_acl.app.arn
+}
+
+output "waf_log_group_name" {
+  description = "CloudWatch log group retaining blocked WAF requests."
+  value       = aws_cloudwatch_log_group.waf.name
+}
+
+output "trusted_ingress_cidrs_parameter_name" {
+  description = "SSM parameter used to rotate trusted Wi-Fi or office egress CIDRs without committing them."
+  value       = data.aws_ssm_parameter.trusted_ingress_cidrs.name
+}

@@ -111,7 +111,8 @@ See the [security and data limitations](#security-and-data-limitations) and
 
 ```mermaid
 flowchart LR
-  Judge[Judge browser] -->|HTTPS| ALB[Application Load Balancer]
+  Judge[Judge browser] -->|HTTPS| WAF[AWS WAFv2\nallowlist + managed rules]
+  WAF --> ALB[Application Load Balancer\nAWS Shield Standard]
   ALB --> ECS[ECS Fargate\nFastAPI + React Lens]
   ECS --> S3[(Encrypted S3\nuploads + artifacts)]
   ECS --> DDB[(DynamoDB\nworkspace records + versions)]
@@ -136,8 +137,13 @@ Terraform deploys into `us-gov-west-1` in the `aws-us-gov` partition:
 - ECS Fargate with an immutable ECR image digest, deployment rollback,
   Container Insights, and CPU target tracking;
 - an HTTPS ALB using an issued ACM certificate for an externally managed DNS
-  hostname. Squarespace supplies the validation and application CNAME records.
-  The ALB forwards `/`, `/lens`, `/lens/*`, `/api/*`, and `/health`;
+  hostname, an explicit security-group CIDR allowlist, AWS Shield Standard,
+  and a regional AWS WAFv2 Web ACL. WAF independently enforces the trusted
+  CIDRs, rate-limits each source, and applies AWS managed common-exploit,
+  known-bad-input, and IP-reputation rules. Blocked requests are retained in
+  CloudWatch for 30 days with authorization and cookie headers redacted.
+  Squarespace supplies the validation and application CNAME records. The ALB
+  forwards `/`, `/lens`, `/lens/*`, `/api/*`, and `/health`;
   `/ui`, `/docs`, and `/openapi.json` remain unexposed. Lens obtains a
   short-lived bearer token after constant-time password verification;
 - private, encrypted single-node OpenSearch 2.15 for demo-scale hybrid retrieval,
@@ -571,6 +577,22 @@ Also set `SECURITY_DOMAIN=demo` and
 secrets are exposed to the deployment job; pull-request test jobs cannot access
 them. Protect changes to `.github/workflows/` and `infra/` with branch review.
 
+Rotating Wi-Fi or office egress addresses are kept outside Git in the
+`/contract-review/demo/trusted-ingress-cidrs` SSM parameter as a JSON array of
+IPv4 CIDRs no broader than `/27`. Prefer `/32`; use a bounded provider-owned
+egress range only when repeated observations confirm address rotation.
+Terraform merges that parameter with
+`ALLOWED_INGRESS_CIDRS_JSON` for both the ALB security group and WAF IP set:
+
+```bash
+aws ssm put-parameter \
+  --region us-gov-west-1 \
+  --name /contract-review/demo/trusted-ingress-cidrs \
+  --type String \
+  --value '["203.0.113.10/32"]' \
+  --overwrite
+```
+
 On every push to `main`, `.github/workflows/deploy.yml` runs tests without AWS
 credentials, then enters the `govcloud-demo` environment gate (approval applies
 when configured in GitHub). Only the
@@ -686,9 +708,11 @@ documents.
   reviewed VPN or judge egress ranges; using `0.0.0.0/0` exposes the demo to the
   public internet and requires a deliberate risk decision.
 - The single NAT gateway and single-node OpenSearch domain are deliberately
-  non-HA. OpenSearch snapshots, restore testing, multi-AZ search, WAF, access
-  logging, private ingress, KMS customer-managed keys, and cross-region recovery
-  are production follow-ups.
+  non-HA. WAF, Shield Standard, rate limiting, and CIDR restrictions materially
+  reduce exposure but do not make the service DDoS-proof. OpenSearch snapshots,
+  restore testing, multi-AZ search, ALB access logging, private ingress, KMS
+  customer-managed keys, Shield Advanced, and cross-region recovery are
+  production follow-ups.
 - The system can miss clauses, misclassify language, retrieve stale policy, or
   generate unsupported wording. Unresolvable citations must be rejected or
   removed at the report trust boundary; any finding left without resolvable
