@@ -74,7 +74,11 @@ def test_govcloud_alb_has_allowlist_waf_and_rate_limit_controls() -> None:
     assert "aws_wafv2_web_acl_association" in waf
     assert "local.effective_allowed_ingress_cidrs" in main
     assert "iam/security-perimeter-deploy.json" in bootstrap
-    assert f"file://{policy_path}" in workflow
+    assert policy_path in workflow
+    assert 'split("${aws:PrincipalAccount}") | join($account)' in workflow
+    assert '"file://${rendered_policy}"' in workflow
+    assert ".Replace(" in bootstrap
+    assert "'${aws:PrincipalAccount}'" in bootstrap
     assert workflow.index("Ensure security perimeter deployment access") < workflow.index(
         "Terraform plan"
     )
