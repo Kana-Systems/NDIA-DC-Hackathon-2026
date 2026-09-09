@@ -577,6 +577,15 @@ marked skipped by its `github.ref == 'refs/heads/main'` job condition. The
 skipped job does not request `govcloud-demo` approval, receive an OIDC token, or
 assume the GovCloud role.
 
+When the managed classifier is enabled, deployment reconciles the
+`classifier-base-image-pull` inline policy from
+`scripts/iam/classifier-base-image-pull.json`, also installed by the GovCloud
+bootstrap script. It permits only image pulls from the AWS-owned GovCloud
+Hugging Face repository used by `Dockerfile.sagemaker`. The job checks access
+to the pinned digest before building, allowing up to one minute for IAM
+propagation. The existing project-role IAM permission covers this policy
+update; no registry write access is granted.
+
 For a local infrastructure review:
 
 ```bash

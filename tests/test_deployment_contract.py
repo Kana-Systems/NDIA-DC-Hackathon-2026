@@ -1,7 +1,39 @@
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_classifier_pull_policy_matches_pinned_upstream_repository() -> None:
+    policy_path = "scripts/iam/classifier-base-image-pull.json"
+    policy = json.loads((ROOT / policy_path).read_text())
+    image = (ROOT / "Dockerfile.sagemaker").read_text().splitlines()[0]
+    match = re.fullmatch(
+        r"FROM (\d{12})\.dkr\.ecr\.(us-gov-[\w-]+)\.amazonaws\.com/([^@]+)@sha256:[0-9a-f]{64}",
+        image,
+    )
+    assert match is not None
+    account, region, repository = match.groups()
+    assert policy["Statement"] == [
+        {
+            "Sid": "ClassifierBaseImagePull",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
+                "ecr:GetDownloadUrlForLayer",
+            ],
+            "Resource": f"arn:aws-us-gov:ecr:{region}:{account}:repository/{repository}",
+        }
+    ]
+    bootstrap = (ROOT / "scripts/bootstrap-govcloud.ps1").read_text()
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+    assert "iam/classifier-base-image-pull.json" in bootstrap
+    assert f"file://{policy_path}" in workflow
+    assert workflow.index("Ensure classifier base image pull access") < workflow.index(
+        "Build private classifier inference image"
+    )
 
 
 def test_production_image_packages_verified_model_and_corpus() -> None:

@@ -179,6 +179,41 @@ jobs:
           role-session-name: github-deploy-${{ github.run_id }}
           audience: sts.amazonaws.com
 
+      - name: Ensure classifier base image pull access
+        if: env.TF_VAR_classifier_model_data_url != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Bootstrap owns this policy. Reconcile existing roles before the build;
+          # the deploy role already manages inline policies on project roles.
+          aws iam put-role-policy \
+            --role-name "${AWS_GOV_ROLE_ARN##*/}" \
+            --policy-name classifier-base-image-pull \
+            --policy-document file://scripts/iam/classifier-base-image-pull.json
+          base_image="$(awk '$1 == "FROM" { print $2; exit }' Dockerfile.sagemaker)"
+          registry="${base_image%%.*}"
+          repository="${base_image#*/}"
+          digest="${repository##*@}"
+          repository="${repository%@*}"
+          # IAM changes can take a few seconds to reach ECR. Fail before building
+          # either image if the pinned upstream image remains inaccessible.
+          for attempt in {1..12}; do
+            if aws ecr batch-get-image \
+              --region us-gov-west-1 \
+              --registry-id "$registry" \
+              --repository-name "$repository" \
+              --image-ids "imageDigest=$digest" \
+              --query 'images[0].imageId.imageDigest' --output text \
+              | grep -Fxq "$digest"; then
+              break
+            fi
+            if (( attempt == 12 )); then
+              echo '::error::Cannot pull the pinned classifier base image after reconciling its ECR policy.'
+              exit 1
+            fi
+            sleep 5
+          done
+
       - name: Verify pinned classifier artifact
         if: env.TF_VAR_classifier_model_data_url != ''
         shell: bash

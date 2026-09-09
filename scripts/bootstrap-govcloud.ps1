@@ -327,6 +327,13 @@ try {
         '--policy-name', "$Project-terraform-deploy",
         '--policy-document', "file://$DeployPolicyPath"
     )
+    $ClassifierPullPolicyPath = Join-Path $PSScriptRoot 'iam/classifier-base-image-pull.json'
+    Invoke-Aws @(
+        'iam', 'put-role-policy',
+        '--role-name', $RoleName,
+        '--policy-name', 'classifier-base-image-pull',
+        '--policy-document', "file://$ClassifierPullPolicyPath"
+    )
 }
 finally {
     Remove-Item -Path $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
