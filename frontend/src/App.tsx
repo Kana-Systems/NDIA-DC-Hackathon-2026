@@ -79,9 +79,9 @@ function Login({ onLogin }: { onLogin: () => void }) {
         </span>
         <p className="overline">Contract intelligence, connected.</p>
         <h1>
-          From source
+          Legal Review
           <br />
-          <span className="hero-accent">to sound judgment.</span>
+          <span className="hero-accent">at Mission Speed</span>
         </h1>
         <p>
           One workspace for your documents, contract reviews, evidence, and
