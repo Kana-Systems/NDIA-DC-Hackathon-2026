@@ -1,6 +1,12 @@
 import json
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -82,6 +88,65 @@ def test_govcloud_alb_has_allowlist_waf_and_rate_limit_controls() -> None:
     assert workflow.index("Ensure security perimeter deployment access") < workflow.index(
         "Terraform plan"
     )
+
+
+@pytest.mark.parametrize("account", ["123456789012", "210987654321", "invalid-account"])
+def test_security_perimeter_step_uploads_rendered_account_policy(
+    tmp_path: Path, account: str
+) -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())
+    step = next(
+        step
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if step.get("name") == "Ensure security perimeter deployment access"
+    )
+    runner_temp = tmp_path / "runner temp"
+    runner_temp.mkdir()
+    uploaded = tmp_path / "uploaded.json"
+    # Exercise the real workflow shell and jq transformation without AWS access.
+    aws = tmp_path / "aws"
+    aws.write_text(
+        f"#!{sys.executable}\n"
+        "import os, pathlib, sys\n"
+        "args = sys.argv[1:]\n"
+        "if args == ['sts', 'get-caller-identity', '--query', 'Account', '--output', 'text']:\n"
+        "    print(os.environ['TEST_ACCOUNT'])\n"
+        "else:\n"
+        "    assert args[:2] == ['iam', 'put-role-policy'], args\n"
+        "    assert args[2:6] == ['--role-name', 'contract-review-github',\n"
+        "                          '--policy-name', 'security-perimeter-deploy'], args\n"
+        "    assert args[6] == '--policy-document' and args[7].startswith('file://'), args\n"
+        "    source = pathlib.Path(args[7][7:])\n"
+        "    assert source.parent == pathlib.Path(os.environ['RUNNER_TEMP']), source\n"
+        "    pathlib.Path(os.environ['TEST_UPLOADED']).write_bytes(source.read_bytes())\n"
+    )
+    aws.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-c", step["run"]],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "RUNNER_TEMP": str(runner_temp),
+            "AWS_GOV_ROLE_ARN": "arn:aws-us-gov:iam::123456789012:role/contract-review-github",
+            "TEST_ACCOUNT": account,
+            "TEST_UPLOADED": str(uploaded),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if account == "invalid-account":
+        assert result.returncode != 0
+        assert not uploaded.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        template = (ROOT / "scripts/iam/security-perimeter-deploy.json").read_text()
+        expected = json.loads(template.replace("${aws:PrincipalAccount}", account))
+        assert json.loads(uploaded.read_text()) == expected
+        assert "${aws:PrincipalAccount}" not in uploaded.read_text()
 
 
 def test_production_image_packages_verified_model_and_corpus() -> None:

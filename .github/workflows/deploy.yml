@@ -185,7 +185,10 @@ jobs:
         run: |
           set -euo pipefail
           account="$(aws sts get-caller-identity --query Account --output text)"
-          [[ "$account" =~ ^[0-9]{12}$ ]]
+          if [[ ! "$account" =~ ^[0-9]{12}$ ]]; then
+            echo '::error::AWS returned an invalid account ID for the security perimeter policy.'
+            exit 1
+          fi
           rendered_policy="${RUNNER_TEMP}/security-perimeter-deploy.json"
           jq --arg account "$account" '
             walk(
