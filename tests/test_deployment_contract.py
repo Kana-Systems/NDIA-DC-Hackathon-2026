@@ -53,6 +53,8 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     assert "volume_size_in_gb" not in endpoint
     assert "kms_key_arn" not in endpoint
     assert "NVMe device is encrypted in hardware" in endpoint
+    assert 'MMS_DEFAULT_WORKERS_PER_MODEL  = "1"' in endpoint
+    assert 'SAGEMAKER_MODEL_SERVER_WORKERS = "1"' in endpoint
     assert "transformers==4.57.6" in image
     assert "@sha256:" in image
     assert thresholds["model_id"] == "Llama-3.1-CUAD-r128-ensemble-3seed"

@@ -30,14 +30,16 @@ resource "aws_sagemaker_model" "classifier" {
     image          = var.classifier_inference_image_uri
     model_data_url = var.classifier_model_data_url
     environment = {
-      HF_HUB_OFFLINE                = "1"
-      MODEL_INFERENCE_BATCH_SIZE    = "4"
-      PYTORCH_CUDA_ALLOC_CONF       = "expandable_segments:True"
-      SAGEMAKER_CONTAINER_LOG_LEVEL = "20"
-      SAGEMAKER_PROGRAM             = "inference.py"
-      SAGEMAKER_SUBMIT_DIRECTORY    = "/opt/ml/model/code"
-      TOKENIZERS_PARALLELISM        = "false"
-      TRANSFORMERS_OFFLINE          = "1"
+      HF_HUB_OFFLINE                 = "1"
+      MODEL_INFERENCE_BATCH_SIZE     = "4"
+      MMS_DEFAULT_WORKERS_PER_MODEL  = "1"
+      PYTORCH_CUDA_ALLOC_CONF        = "expandable_segments:True"
+      SAGEMAKER_CONTAINER_LOG_LEVEL  = "20"
+      SAGEMAKER_MODEL_SERVER_WORKERS = "1"
+      SAGEMAKER_PROGRAM              = "inference.py"
+      SAGEMAKER_SUBMIT_DIRECTORY     = "/opt/ml/model/code"
+      TOKENIZERS_PARALLELISM         = "false"
+      TRANSFORMERS_OFFLINE           = "1"
     }
   }
 
