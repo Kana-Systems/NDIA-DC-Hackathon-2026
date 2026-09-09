@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
   ChevronRight,
+  ChevronLeft,
   Database,
   FileText,
   Layers,
@@ -27,6 +28,7 @@ import {
   RecordsPage,
 } from "./WorkspacePages";
 import "./workspace.css";
+import kanaLogo from "./assets/kana-systems-logo.png";
 type Page =
   | "contracts"
   | "research"
@@ -41,6 +43,12 @@ const pages = [
   { id: "library", label: "Source library", icon: BookOpen },
   { id: "entities", label: "Entities & relationships", icon: Link2 },
   { id: "records", label: "Reviewed records", icon: Layers },
+] as const;
+const navigation = [
+  { id: "contracts", label: "Contracts", icon: FileText, children: ["contracts"] },
+  { id: "research", label: "Ask / Research", icon: MessageSquare, children: ["research"] },
+  { id: "library", label: "Sources", icon: Database, children: ["library", "connections"] },
+  { id: "records", label: "Knowledge", icon: Layers, children: ["records", "entities"] },
 ] as const;
 function Login({ onLogin }: { onLogin: () => void }) {
   const [password, setPassword] = useState("");
@@ -65,7 +73,8 @@ function Login({ onLogin }: { onLogin: () => void }) {
     <main className="lens-login">
       <section>
         <span className="wordmark">
-          <span className="lens-symbol">K</span>Kana Legal
+          <img className="kana-logo" src={kanaLogo} alt="Kana Systems" width="64" height="64" />
+          <span>Kana Legal</span>
         </span>
         <p className="overline">Contract intelligence, connected.</p>
         <h1>
@@ -190,6 +199,9 @@ function AddDocument({ onAdded }: { onAdded: (doc: Document) => void }) {
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [page, setPage] = useState<Page>("contracts");
+  const [collapsed, setCollapsed] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+  const activeGroup = navigation.find(group => (group.children as readonly Page[]).includes(page))!;
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selected, setSelected] = useState<Document | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -223,6 +235,11 @@ export default function App() {
       active = false;
     };
   }, [authenticated]);
+  useEffect(() => {
+    if (!authenticated) return;
+    mainRef.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [page, authenticated]);
   if (!authenticated) return <Login onLogin={() => setAuthenticated(true)} />;
   const contracts = documents.filter(
     (d) =>
@@ -230,43 +247,56 @@ export default function App() {
       d.title.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <div className="lens-workspace">
+    <div className={`lens-workspace${collapsed ? " sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#workspace-main">
         Skip to workspace
       </a>
       <aside className="sidebar">
-        <a
-          href="#"
-          className="wordmark"
-          onClick={(e) => {
-            e.preventDefault();
-            setPage("contracts");
-          }}
-        >
-          <span className="lens-symbol">K</span>
-          <span>
-            Kana
-            <br />
-            <b>Legal</b>
-          </span>
-        </a>
+        <div className="sidebar-header">
+          <a
+            href="#"
+            className="wordmark"
+            aria-label="Kana Legal home"
+            onClick={(e) => {
+              e.preventDefault();
+              setPage("contracts");
+            }}
+          >
+            <img className="kana-logo" src={kanaLogo} alt="Kana Systems" width="40" height="40" />
+            <span className="brand-name">Kana <b>Legal</b></span>
+          </a>
+        </div>
         <p className="nav-label">WORKSPACE</p>
-        <nav aria-label="Main navigation">
-          {pages.map(({ id, label, icon: Icon }) => (
+        <nav id="workspace-navigation" aria-label="Main navigation">
+          {navigation.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              aria-current={page === id ? "page" : undefined}
-              className={page === id ? "active" : ""}
+              aria-label={label}
+              title={collapsed ? label : undefined}
+              aria-current={activeGroup.id === id ? "page" : undefined}
+              className={activeGroup.id === id ? "active" : ""}
               onClick={() => {
-                setPage(id);
+                if (activeGroup.id !== id) setPage(id);
                 void reload();
               }}
             >
-              <Icon size={18} />
-              {label}
+              <Icon size={18} aria-hidden="true" />
+              <span className="nav-text">{label}</span>
             </button>
           ))}
         </nav>
+        <div className="sidebar-controls">
+          <button
+            className="sidebar-toggle"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            aria-controls="workspace-navigation"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setCollapsed(value => !value)}
+          >
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+        </div>
         <div className="sidebar-bottom">
           <ShieldCheck size={18} />
           <p>
@@ -276,6 +306,8 @@ export default function App() {
           </p>
           <button
             className="quiet"
+            aria-label="Sign out"
+            title={collapsed ? "Sign out" : undefined}
             onClick={() => {
               apiClient.logout();
               setAuthenticated(false);
@@ -288,7 +320,7 @@ export default function App() {
             }}
           >
             <LogOut size={15} />
-            Sign out
+            <span className="nav-text">Sign out</span>
           </button>
         </div>
       </aside>
@@ -300,7 +332,17 @@ export default function App() {
           </span>
           <Chip>Private workspace · demo identity</Chip>
         </header>
-        <main id="workspace-main">
+        <main id="workspace-main" ref={mainRef} tabIndex={-1}>
+          {activeGroup.children.length > 1 && (
+            <nav className="section-navigation" aria-label={`${activeGroup.label} navigation`}>
+              {activeGroup.children.map(id => (
+                <button key={id} aria-current={page === id ? "page" : undefined}
+                  className={page === id ? "active" : ""} onClick={() => setPage(id)}>
+                  {pages.find(item => item.id === id)?.label}
+                </button>
+              ))}
+            </nav>
+          )}
           <ErrorNotice error={error} />
           {page === "contracts" &&
             (selected ? (

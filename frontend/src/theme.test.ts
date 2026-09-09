@@ -15,6 +15,60 @@ function contrast(a: string, b: string) {
 }
 
 describe('Kana Legal ocean theme', () => {
+  it('uses locally bundled DM Sans for every UI font declaration', () => {
+    expect(stylesheet).not.toMatch(/Manrope|fonts.googleapis.com|@import/)
+    expect(stylesheet).toContain('./assets/dm-sans-latin.woff2')
+    expect(stylesheet).toContain('./assets/dm-sans-latin-ext.woff2')
+    expect(stylesheet).toContain('font-weight: 400 800')
+    for (const declaration of stylesheet.matchAll(/font-family:\s*([^;]+);/g)) {
+      expect(declaration[1]).toMatch(/DM Sans|inherit/)
+    }
+  })
+  it('distinguishes the blue top bar while preserving readable breadcrumbs', () => {
+    expect(tokens.get('topbar')).toBe('#203c52')
+    expect(luminance(tokens.get('topbar')!)).toBeGreaterThan(luminance(tokens.get('bg')!) * 2)
+    expect(contrast(tokens.get('label')!, tokens.get('topbar')!)).toBeGreaterThanOrEqual(4.5)
+    expect(stylesheet).toContain('background: var(--topbar)')
+    expect(stylesheet).not.toContain('#101d30ed')
+  })
+  it('supports a compact sidebar and native scrolling with reduced-motion overrides', () => {
+    expect(stylesheet).toContain('.brand-name { white-space: nowrap; }')
+    expect(stylesheet).toContain('.sidebar-collapsed { --sidebar-width: 84px; }')
+    expect(stylesheet).toContain('scrollbar-gutter: stable')
+    expect(stylesheet).toContain('scroll-behavior: smooth')
+    const reducedMotion = stylesheet.slice(stylesheet.indexOf('@media (prefers-reduced-motion: reduce)'))
+    expect(reducedMotion).toContain('html { scroll-behavior: auto; }')
+    expect(reducedMotion).toContain('.sidebar, .workspace-body { transition: none; }')
+    const mobile = stylesheet.slice(stylesheet.indexOf('@media (max-width: 760px)'))
+    expect(mobile).toContain('.sidebar-collapsed .sidebar nav, .sidebar-collapsed .sidebar-bottom { display: none; }')
+  })
+  it('separates the ocean-blue sidebar from the darker workspace', () => {
+    expect(tokens.get('sidebar')).toBe('#19394e')
+    expect(luminance(tokens.get('sidebar')!)).toBeGreaterThan(luminance(tokens.get('bg')!) * 2)
+    for (const foreground of ['text', 'muted', 'accent']) {
+      expect(contrast(tokens.get(foreground)!, tokens.get('sidebar')!), foreground)
+        .toBeGreaterThanOrEqual(4.5)
+    }
+    expect(contrast(tokens.get('text')!, tokens.get('sidebar-hover')!)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(tokens.get('heading')!, tokens.get('sidebar-active')!)).toBeGreaterThanOrEqual(4.5)
+  })
+  it('uses the bundled wave only in the login hero with a readable navy overlay', () => {
+    const hero = stylesheet.match(/\.lens-login > section \{([^}]+)\}/)![1]
+    expect(hero).toContain('url("./assets/kana-wave.jpg") center / cover no-repeat')
+    expect(hero).toContain('linear-gradient(110deg, #0c1a2ce6, #0c1a2ccc)')
+    expect(stylesheet.match(/kana-wave\.jpg/g)).toHaveLength(1)
+    // Worst case: pure white foam beneath the least opaque gradient stop.
+    const navy = '#0c1a2c'
+    const alpha = 0xcc / 255
+    const brightestBackground = '#' + [1, 3, 5].map(offset =>
+      Math.round(parseInt(navy.slice(offset, offset + 2), 16) * alpha + 255 * (1 - alpha))
+        .toString(16).padStart(2, '0')
+    ).join('')
+    for (const foreground of ['text', 'heading', 'accent', 'accent-soft']) {
+      expect(contrast(tokens.get(foreground)!, brightestBackground), foreground)
+        .toBeGreaterThanOrEqual(4.5)
+    }
+  })
   it('uses dark native controls and replaces the former green palette', () => {
     expect(stylesheet).toContain('color-scheme: dark')
     expect(tokens.get('bg')).toBe('#101929')

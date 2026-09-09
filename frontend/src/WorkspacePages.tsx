@@ -18,7 +18,8 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [name, setName] = useState("");
   const [folder, setFolder] = useState("");
-  const [provider, setProvider] = useState("shared-folder");
+  const [providerChoice, setProvider] = useState("");
+  const provider = providerChoice || (data?.sharepoint_available ? "sharepoint" : "shared-folder");
   const [category, setCategory] = useState("reference");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -115,8 +116,9 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
             : "Manual sync · scheduled worker not enabled"}
         </span>
       </div>
-      <div className="two-columns">
-        <section className="panel">
+      <div className="connections-layout">
+        <div className="connection-setup">
+        <section className="panel sharepoint-check">
           <h2>SharePoint connection check</h2>
           <p>Credentials stay in AWS Secrets Manager. This checks the selected site and library read access before any files are imported.</p>
           <button disabled={busy || !data?.sharepoint_available} onClick={() => {
@@ -142,7 +144,7 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
             Source type
             <select
               value={provider}
-              onChange={(e) => setProvider(e.target.value)}
+              onChange={(e) => { setProvider(e.target.value); setFolder(""); }}
             >
               <option value="shared-folder">Approved shared folder</option>
               <option value="sharepoint">Configured SharePoint drive</option>
@@ -200,7 +202,8 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
             Save connection
           </button>
         </form>
-        <section>
+        </div>
+        <section className="connected-sources">
           <h2>Connected sources</h2>
           {!data?.connections.length && (
             <Empty title="No connections yet">
