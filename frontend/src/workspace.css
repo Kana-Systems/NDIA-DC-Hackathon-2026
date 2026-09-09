@@ -5,7 +5,10 @@
   --surface: #172337;
   --surface-raised: #1b2e43;
   --input: #0d1728;
-  --sidebar: #0b1424;
+  --sidebar: #19394e;
+  --sidebar-border: #3c6078;
+  --sidebar-hover: #20455c;
+  --sidebar-active: #20526b;
   --active: #123b52;
   --border: #2a3b52;
   --text: #dce6f5;
@@ -195,7 +198,7 @@ button.quiet {
   width: 246px;
   background: var(--sidebar);
   color: var(--text);
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--sidebar-border);
   padding: 34px 18px 24px;
   position: fixed;
   inset: 0 auto 0 0;
@@ -251,16 +254,19 @@ button.quiet {
   text-align: left;
 }
 .sidebar nav button.active {
-  background: var(--active);
+  background: var(--sidebar-active);
   color: var(--heading);
-  border-color: #27718c;
+  border-color: var(--accent);
+}
+.sidebar nav button:not(.active):hover {
+  background: var(--sidebar-hover);
 }
 .sidebar nav button svg {
   flex-shrink: 0;
 }
 .sidebar-bottom {
   margin: auto 14px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--sidebar-border);
   padding-top: 22px;
 }
 .sidebar-bottom p {
@@ -272,7 +278,7 @@ button.quiet {
   font-size: 12px;
   background: transparent !important;
   color: var(--text) !important;
-  border-color: var(--border) !important;
+  border-color: var(--sidebar-border) !important;
 }
 .workspace-body {
   margin-left: 246px;

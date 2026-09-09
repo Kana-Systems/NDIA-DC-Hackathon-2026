@@ -15,6 +15,16 @@ function contrast(a: string, b: string) {
 }
 
 describe('Kana Legal ocean theme', () => {
+  it('separates the ocean-blue sidebar from the darker workspace', () => {
+    expect(tokens.get('sidebar')).toBe('#19394e')
+    expect(luminance(tokens.get('sidebar')!)).toBeGreaterThan(luminance(tokens.get('bg')!) * 2)
+    for (const foreground of ['text', 'muted', 'accent']) {
+      expect(contrast(tokens.get(foreground)!, tokens.get('sidebar')!), foreground)
+        .toBeGreaterThanOrEqual(4.5)
+    }
+    expect(contrast(tokens.get('text')!, tokens.get('sidebar-hover')!)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(tokens.get('heading')!, tokens.get('sidebar-active')!)).toBeGreaterThanOrEqual(4.5)
+  })
   it('uses the bundled wave only in the login hero with a readable navy overlay', () => {
     const hero = stylesheet.match(/\.lens-login > section \{([^}]+)\}/)![1]
     expect(hero).toContain('url("./assets/kana-wave.jpg") center / cover no-repeat')
