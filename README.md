@@ -459,6 +459,12 @@ allows deletion, then remove its unused model and endpoint configuration.
 ECS configuration, invocation permissions, and the deployment smoke test all
 resolve the active endpoint name from Terraform.
 
+The pinned Hugging Face container serializes the artifact's `(JSON body,
+content type)` output as a two-item JSON array. The application client and
+deployment smoke check accept that exact `application/json` envelope as well
+as a direct JSON object, then validate the prediction contract. Model IDs,
+prediction counts, and label scores remain checked after decoding.
+
 The reviewed object URI is recorded in
 `ml/deployment/llama_r128_ensemble_artifact.json`. Set the secret to the exact
 output of:

@@ -174,7 +174,8 @@ def test_classifier_off_loads_no_model_and_has_no_hints(monkeypatch):
     assert len(service.review_trace["calls"]) == 2
 
 
-def test_sagemaker_classifier_uses_pinned_endpoint_model_contract():
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_sagemaker_classifier_uses_pinned_endpoint_model_contract(wrapped):
     class Client:
         def invoke_endpoint(self, **kwargs):
             assert kwargs["EndpointName"] == "kana-legal-cuad-ensemble"
@@ -183,25 +184,19 @@ def test_sagemaker_classifier_uses_pinned_endpoint_model_contract():
                 "texts": ["Termination for convenience applies."],
                 "threshold": 0.525,
             }
-            return {
-                "Body": io.BytesIO(
-                    json.dumps(
-                        {
-                            "predictions": [
-                                {
-                                    "model_id": "Llama-3.1-CUAD-r128-ensemble-3seed",
-                                    "labels": [
-                                        {
-                                            "label": "termination_for_convenience",
-                                            "score": 0.91,
-                                        }
-                                    ],
-                                }
-                            ]
-                        }
-                    ).encode()
-                )
+            payload = {
+                "predictions": [
+                    {
+                        "model_id": "Llama-3.1-CUAD-r128-ensemble-3seed",
+                        "labels": [{"label": "termination_for_convenience", "score": 0.91}],
+                    }
+                ]
             }
+            if wrapped:
+                from ml.inference import output_fn
+
+                payload = output_fn(payload, "application/json")
+            return {"Body": io.BytesIO(json.dumps(payload).encode())}
 
     classifier = SageMakerClassifier(
         Settings(
@@ -214,6 +209,31 @@ def test_sagemaker_classifier_uses_pinned_endpoint_model_contract():
     predictions = classifier.predict(["Termination for convenience applies."], 0.525)
 
     assert predictions[0]["labels"][0]["score"] == 0.91
+
+
+@pytest.mark.parametrize("fault", ["media_type", "json", "model_id", "score", "count"])
+def test_sagemaker_wrapped_response_retains_validation(fault):
+    model_id = "Llama-3.1-CUAD-r128-ensemble-3seed"
+    prediction = {
+        "model_id": "wrong-model" if fault == "model_id" else model_id,
+        "labels": [
+            {"label": "termination_for_convenience", "score": 2 if fault == "score" else 0.9}
+        ],
+    }
+    payload = {"predictions": [] if fault == "count" else [prediction]}
+    envelope = [
+        "{" if fault == "json" else json.dumps(payload),
+        "text/plain" if fault == "media_type" else "application/json",
+    ]
+    client = SimpleNamespace(
+        invoke_endpoint=lambda **_kwargs: {"Body": io.BytesIO(json.dumps(envelope).encode())}
+    )
+    classifier = SageMakerClassifier(
+        Settings(classifier_endpoint_name="test-endpoint", classifier_endpoint_model_id=model_id),
+        client=client,
+    )
+    with pytest.raises(RuntimeError):
+        classifier.predict(["Termination for convenience applies."], 0.5)
 
 
 def test_model_review_prefers_configured_sagemaker_classifier(monkeypatch):

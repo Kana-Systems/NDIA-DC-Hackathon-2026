@@ -50,6 +50,7 @@ def test_govcloud_alb_has_allowlist_waf_and_rate_limit_controls() -> None:
     firewall = statements["ManageProjectWebFirewall"]
     parameter = statements["ReadTrustedIngressParameter"]
     managed_rules = statements["UseRegionalManagedRuleSets"]
+    association_lookup = statements["ReadRegionalWebACLAssociations"]
     waf = (ROOT / "infra/terraform/waf.tf").read_text()
     main = (ROOT / "infra/terraform/main.tf").read_text()
     bootstrap = (ROOT / "scripts/bootstrap-govcloud.ps1").read_text()
@@ -60,6 +61,10 @@ def test_govcloud_alb_has_allowlist_waf_and_rate_limit_controls() -> None:
     assert set(managed_rules["Action"]) == {"wafv2:CreateWebACL", "wafv2:UpdateWebACL"}
     assert managed_rules["Resource"] == (
         "arn:aws-us-gov:wafv2:us-gov-west-1:${aws:PrincipalAccount}:regional/managedruleset/*/*"
+    )
+    assert association_lookup["Action"] == "wafv2:GetWebACLForResource"
+    assert association_lookup["Resource"] == (
+        "arn:aws-us-gov:wafv2:us-gov-west-1:${aws:PrincipalAccount}:regional/webacl/*/*"
     )
     assert {
         "wafv2:CreateWebACL",
@@ -153,6 +158,39 @@ def test_security_perimeter_step_uploads_rendered_account_policy(
         expected = json.loads(template.replace("${aws:PrincipalAccount}", account))
         assert json.loads(uploaded.read_text()) == expected
         assert "${aws:PrincipalAccount}" not in uploaded.read_text()
+
+
+@pytest.mark.parametrize("wrapped,valid", [(False, True), (True, True), (True, False)])
+def test_deployment_smoke_check_validates_classifier_wire_response(wrapped, valid):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())
+    step = next(
+        step
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if step.get("name") == "Verify managed classifier endpoint"
+    )
+    match = re.search(r"jq -e '([\s\S]*?)' \"\$response\"", step["run"])
+    assert match is not None
+    payload = {
+        "predictions": [
+            {
+                "model_id": "Llama-3.1-CUAD-r128-ensemble-3seed" if valid else "wrong-model",
+                "labels": [{"label": "termination_for_convenience", "score": 0.91}],
+            }
+        ]
+    }
+    if wrapped:
+        from ml.inference import output_fn
+
+        payload = output_fn(payload, "application/json")
+    result = subprocess.run(
+        ["jq", "-e", match[1]],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert (result.returncode == 0) == valid, result.stderr
 
 
 def test_production_image_packages_verified_model_and_corpus() -> None:

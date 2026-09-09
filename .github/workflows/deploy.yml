@@ -440,9 +440,18 @@ jobs:
             --body "fileb://${request}" \
             "$response" >/dev/null
           jq -e '
+            if type == "array" then
+              if length == 2 and .[1] == "application/json" and (.[0] | type) == "string"
+              then .[0] | fromjson
+              else error("Unexpected classifier response envelope")
+              end
+            else . end
+            |
             (.predictions | length) == 1
             and .predictions[0].model_id == "Llama-3.1-CUAD-r128-ensemble-3seed"
             and (.predictions[0].labels | type) == "array"
+            and any(.predictions[0].labels[];
+              .label == "termination_for_convenience" and .score >= 0.5 and .score <= 1)
           ' "$response" >/dev/null
 
       - name: Seed sample knowledge in OpenSearch

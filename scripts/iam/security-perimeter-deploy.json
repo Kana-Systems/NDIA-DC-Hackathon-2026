@@ -46,6 +46,12 @@
       "Resource": "arn:aws-us-gov:wafv2:us-gov-west-1:${aws:PrincipalAccount}:regional/managedruleset/*/*"
     },
     {
+      "Sid": "ReadRegionalWebACLAssociations",
+      "Effect": "Allow",
+      "Action": "wafv2:GetWebACLForResource",
+      "Resource": "arn:aws-us-gov:wafv2:us-gov-west-1:${aws:PrincipalAccount}:regional/webacl/*/*"
+    },
+    {
       "Sid": "ReadRegionalFirewallCatalog",
       "Effect": "Allow",
       "Action": [

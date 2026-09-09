@@ -91,6 +91,15 @@ class SageMakerClassifier:
             raise RuntimeError("Classifier endpoint response exceeds the allowed size")
         try:
             payload = json.load(io.BytesIO(raw))
+            # The pinned Hugging Face container serializes the artifact's
+            # (JSON body, content type) output_fn tuple as a JSON array.
+            if (
+                isinstance(payload, list)
+                and len(payload) == 2
+                and isinstance(payload[0], str)
+                and payload[1] == "application/json"
+            ):
+                payload = json.loads(payload[0])
         except (TypeError, ValueError) as error:
             raise RuntimeError("Classifier endpoint returned invalid JSON") from error
         predictions = payload.get("predictions") if isinstance(payload, dict) else None
