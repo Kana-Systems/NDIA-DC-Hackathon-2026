@@ -71,7 +71,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
         <h1>
           From source
           <br />
-          to sound judgment.
+          <span className="hero-accent">to sound judgment.</span>
         </h1>
         <p>
           One workspace for your documents, contract reviews, evidence, and
