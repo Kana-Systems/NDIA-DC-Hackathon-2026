@@ -575,7 +575,7 @@ def sync_connection(db, principal, connection_id, settings, lease=None):
                 return
             seen.add(key)
             if error:
-                errors.append({"file": key, "message": error})
+                errors.append({"file": provenance.get("source_name") or key, "message": error})
                 if old := previous.get(key):
                     old["status"] = "source-error"
                     db.save(principal, "document", old, old["id"], old["revision"])

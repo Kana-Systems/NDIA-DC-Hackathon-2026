@@ -129,6 +129,16 @@ when its cloud access and inference cost are intended.
 | Session expires or becomes invalid after restart | Sign in again. The UI retains open forms during session renewal. |
 | AWS credentials/model access fails | Fix the configured AWS profile and Bedrock permissions, or explicitly select both offline flags. |
 | Approval/export is blocked | Inspect source readiness; changed, unavailable, or unsupported evidence requires a fresh review. |
+| A SharePoint file reports a sync error | Check the filename and reason shown under the connection. Temporary download failures retry up to three total attempts; persistent failures remain visible. Use **Sync now** after resolving access, size, encoding, or parsing issues. Existing records are retained, but unavailable sources cannot support decisions until a successful sync. |
+
+SharePoint reads retry throttling, temporary server errors, timeouts, and interrupted
+downloads. Retries follow Microsoft's `Retry-After` header, or use exponential
+backoff when it is absent, following the
+[Microsoft Graph throttling guidance](https://learn.microsoft.com/en-us/graph/throttling).
+An individual retry wait is limited to 60 seconds; longer requested waits are
+reported as a temporary failure rather than retried early. Interrupted downloads
+restart with a fresh URL and discard partial bytes. Sync logs include the item ID,
+operation stage, exception type, and HTTP status without document text or signed URLs.
 
 For AWS hosting, use the [repository deployment instructions](../README.md#govcloud-deployment).
 For current connector and production boundaries, read

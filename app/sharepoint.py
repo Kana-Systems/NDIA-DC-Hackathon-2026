@@ -1,13 +1,51 @@
 """Approved-library SharePoint ingestion for the shared-identity hackathon workspace."""
 
 import json
+import logging
 from pathlib import PurePosixPath
 from urllib.parse import quote, urlsplit
 
+import requests
 from fastapi import HTTPException
 
 from app.parsers import DocumentParser
 from ingestion.graph import GraphClient
+
+logger = logging.getLogger(__name__)
+
+
+def source_error(error, stage):
+    """Keep signed URLs, credentials and document text out of sync diagnostics."""
+    if isinstance(error, requests.RequestException):
+        status = error.response.status_code if error.response is not None else None
+        if status in {401, 403}:
+            return "SharePoint denied access to this file. Check its library permissions."
+        if status == 404:
+            return "File was moved or removed during sync. Sync again to refresh the library."
+        if status in {408, 429, 500, 502, 503, 504} or isinstance(
+            error,
+            (requests.Timeout, requests.ConnectionError, requests.exceptions.ChunkedEncodingError),
+        ):
+            return (
+                "SharePoint download is temporarily unavailable after retries. Try syncing again."
+            )
+        return "SharePoint could not download this file. Check its availability and access."
+    if isinstance(error, UnicodeError):
+        return "Text encoding is unsupported. Save the file as UTF-8 and sync again."
+    known = {
+        "Document exceeds upload size limit": "File exceeds the configured upload size limit.",
+        "Sensitivity-labelled files require a production access workflow": (
+            "Sensitivity-labelled files require a production access workflow."
+        ),
+        "Document parsing timed out": (
+            "Parsing timed out. Split or simplify the file and sync again."
+        ),
+    }
+    if isinstance(error, ValueError) and str(error) in known:
+        return known[str(error)]
+    if stage == "parse":
+        return "File could not be parsed. Check that it is readable and contains extractable text."
+    return "File download failed. Check its availability and access, then sync again."
 
 
 def configured_client(settings, principal):
@@ -100,6 +138,7 @@ def source_files(connection, settings, principal):
             name = item.get("name", "")
             if PurePosixPath(name).suffix.lower() not in {".txt", ".md", ".pdf", ".docx"}:
                 continue
+            stage = "download"
             try:
                 label = item.get("sensitivityLabel")
                 if label:
@@ -112,6 +151,7 @@ def source_files(connection, settings, principal):
                     f"/drives/{drive}/items/{quote(key, safe='')}/content",
                     settings.max_upload_bytes,
                 )
+                stage = "parse"
                 doc = (
                     parser.parse_isolated(name, raw)
                     if name.lower().endswith((".pdf", ".docx"))
@@ -131,10 +171,18 @@ def source_files(connection, settings, principal):
                         "source_provider": "sharepoint",
                     },
                 )
-            except Exception:
+            except Exception as error:
+                response = getattr(error, "response", None)
+                logger.warning(
+                    "SharePoint file sync failed: item=%s stage=%s error=%s status=%s",
+                    key,
+                    stage,
+                    type(error).__name__,
+                    response.status_code if response is not None else None,
+                )
                 yield (
                     key,
                     None,
-                    "File could not be downloaded or parsed; check type, size and access",
-                    {},
+                    source_error(error, stage),
+                    {"source_name": name},
                 )

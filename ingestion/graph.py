@@ -2,13 +2,54 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
+from contextlib import suppress
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote, urlsplit
 
 import requests
 
 from ingestion.models import ChangeEvent, ConnectorBatch, SourceDocument
+
+
+def _retry_read(operation):
+    """Retry transient reads, including interrupted bodies, without unbounded syncs."""
+    for attempt in range(3):
+        try:
+            return operation()
+        except requests.RequestException as error:
+            response = error.response
+            status = response.status_code if response is not None else None
+            transient = isinstance(
+                error,
+                (
+                    requests.Timeout,
+                    requests.ConnectionError,
+                    requests.exceptions.ChunkedEncodingError,
+                ),
+            ) or status in {408, 429, 500, 502, 503, 504}
+            if not transient or attempt == 2:
+                raise
+            delay = 2**attempt
+            retry_after = response.headers.get("Retry-After") if response is not None else None
+            if retry_after:
+                try:
+                    delay = max(0, int(retry_after))
+                except ValueError:
+                    with suppress(ValueError, TypeError, OverflowError):
+                        delay = max(
+                            0,
+                            (
+                                parsedate_to_datetime(retry_after) - datetime.now(UTC)
+                            ).total_seconds(),
+                        )
+            # Never retry earlier than Microsoft asks. Leave long waits to a later sync.
+            if delay > 60:
+                raise
+            time.sleep(delay)
 
 
 class GraphClient:
@@ -75,7 +116,13 @@ class GraphClient:
     def get_bytes(self, url_or_path: str) -> bytes:
         return self._get(url_or_path).content
 
-    def _get(self, url_or_path: str, **kwargs) -> requests.Response:
+    def _get(self, url_or_path: str, *, retry=True, **kwargs) -> requests.Response:
+        def operation():
+            return self._get_once(url_or_path, **kwargs)
+
+        return _retry_read(operation) if retry else operation()
+
+    def _get_once(self, url_or_path: str, **kwargs) -> requests.Response:
         url = (
             url_or_path
             if url_or_path.startswith(("https://", "http://"))
@@ -95,6 +142,7 @@ class GraphClient:
             **kwargs,
         )
         if response.status_code == 401:
+            response.close()
             self._access_token = None
             response = self.session.get(
                 url,
@@ -102,11 +150,19 @@ class GraphClient:
                 timeout=self.timeout_seconds,
                 **kwargs,
             )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.RequestException:
+            response.close()
+            raise
         return response
 
     def download(self, path: str, max_bytes: int) -> bytes:
-        response = self._get(path, stream=True, allow_redirects=False)
+        # Restart from Graph to obtain a fresh signed URL and discard partial bytes.
+        return _retry_read(lambda: self._download_once(path, max_bytes))
+
+    def _download_once(self, path: str, max_bytes: int) -> bytes:
+        response = self._get(path, retry=False, stream=True, allow_redirects=False)
         try:
             if response.status_code in {301, 302, 303, 307, 308}:
                 target = response.headers.get("Location", "")
@@ -129,6 +185,7 @@ class GraphClient:
                 response = requests.get(
                     target, timeout=self.timeout_seconds, stream=True, allow_redirects=False
                 )
+            response.raise_for_status()
             if response.status_code != 200:
                 raise ValueError("Document download did not succeed")
             if int(response.headers.get("Content-Length", 0)) > max_bytes:
