@@ -15,6 +15,22 @@ function contrast(a: string, b: string) {
 }
 
 describe('Kana Legal ocean theme', () => {
+  it('uses locally bundled DM Sans for every UI font declaration', () => {
+    expect(stylesheet).not.toMatch(/Manrope|fonts.googleapis.com|@import/)
+    expect(stylesheet).toContain('./assets/dm-sans-latin.woff2')
+    expect(stylesheet).toContain('./assets/dm-sans-latin-ext.woff2')
+    expect(stylesheet).toContain('font-weight: 400 800')
+    for (const declaration of stylesheet.matchAll(/font-family:\s*([^;]+);/g)) {
+      expect(declaration[1]).toMatch(/DM Sans|inherit/)
+    }
+  })
+  it('distinguishes the blue top bar while preserving readable breadcrumbs', () => {
+    expect(tokens.get('topbar')).toBe('#203c52')
+    expect(luminance(tokens.get('topbar')!)).toBeGreaterThan(luminance(tokens.get('bg')!) * 2)
+    expect(contrast(tokens.get('label')!, tokens.get('topbar')!)).toBeGreaterThanOrEqual(4.5)
+    expect(stylesheet).toContain('background: var(--topbar)')
+    expect(stylesheet).not.toContain('#101d30ed')
+  })
   it('supports a compact sidebar and native scrolling with reduced-motion overrides', () => {
     expect(stylesheet).toContain('.brand-name { white-space: nowrap; }')
     expect(stylesheet).toContain('.sidebar-collapsed { --sidebar-width: 84px; }')

@@ -1,4 +1,19 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap");
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("./assets/dm-sans-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("./assets/dm-sans-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 :root {
   color-scheme: dark;
   --bg: #101929;
@@ -6,6 +21,8 @@
   --surface-raised: #1b2e43;
   --input: #0d1728;
   --sidebar: #19394e;
+  --topbar: #203c52;
+  --topbar-border: #41627a;
   --sidebar-border: #3c6078;
   --sidebar-hover: #20455c;
   --sidebar-active: #20526b;
@@ -86,7 +103,7 @@ a {
 h1,
 h2,
 h3 {
-  font-family: Manrope, system-ui, sans-serif;
+  font-family: "DM Sans", system-ui, sans-serif;
   letter-spacing: -0.035em;
   color: var(--heading);
   margin: 0 0 12px;
@@ -220,7 +237,7 @@ button.quiet {
   display: flex;
   align-items: center;
   gap: 13px;
-  font-family: Manrope, sans-serif;
+  font-family: "DM Sans", system-ui, sans-serif;
   font-size: 17px;
   font-weight: 500;
   line-height: 1.35;
@@ -376,14 +393,14 @@ button.quiet {
 .connections-layout input, .connections-layout select { min-width: 0; }
 .workspace-topbar {
   height: 70px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--topbar-border);
   padding: 0 42px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--surface);
+  background: var(--topbar);
   font-size: 12px;
-  color: var(--muted);
+  color: var(--label);
 }
 .workspace-topbar > span {
   display: flex;
@@ -449,7 +466,7 @@ button.quiet {
   border: 0;
 }
 .journey article > span {
-  font-family: Manrope, sans-serif;
+  font-family: "DM Sans", system-ui, sans-serif;
   font-size: 12px;
   color: var(--accent);
   display: block;
@@ -1095,9 +1112,6 @@ select:focus {
 }
 .lens-workspace {
   background: radial-gradient(ellipse at 90% 0%, #10374d4d, transparent 55%), var(--bg);
-}
-.workspace-topbar {
-  background: #101d30ed;
 }
 .wordmark b,
 .document-icon svg,
