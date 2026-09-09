@@ -1,5 +1,7 @@
 locals {
-  managed_classifier_endpoint_name = "${local.name}-llama-cuad"
+  # The pre-G6 name belongs to an interrupted CreateEndpoint operation that AWS
+  # still holds in Creating. Keep a stable, distinct name for the G6 deployment.
+  managed_classifier_endpoint_name = "${local.name}-llama-cuad-g6"
   classifier_endpoint_enabled      = var.classifier_model_data_url != ""
   classifier_environment = {
     HF_HUB_OFFLINE = "1"

@@ -37,6 +37,15 @@
       ]
     },
     {
+      "Sid": "UseRegionalManagedRuleSets",
+      "Effect": "Allow",
+      "Action": [
+        "wafv2:CreateWebACL",
+        "wafv2:UpdateWebACL"
+      ],
+      "Resource": "arn:aws-us-gov:wafv2:us-gov-west-1:${aws:PrincipalAccount}:regional/managedruleset/*/*"
+    },
+    {
       "Sid": "ReadRegionalFirewallCatalog",
       "Effect": "Allow",
       "Action": [

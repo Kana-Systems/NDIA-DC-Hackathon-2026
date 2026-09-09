@@ -451,6 +451,14 @@ artifact, image, and environment revision; endpoint configuration names also
 include the instance type so Terraform can create replacements without name
 collisions.
 
+The managed endpoint is `contract-review-demo-llama-cuad-g6`. The original
+`contract-review-demo-llama-cuad` name was left in AWS after a canceled creation
+and is not used by this deployment. AWS rejects updates and deletion while that
+original endpoint remains `Creating`; remove the original endpoint once AWS
+allows deletion, then remove its unused model and endpoint configuration.
+ECS configuration, invocation permissions, and the deployment smoke test all
+resolve the active endpoint name from Terraform.
+
 The reviewed object URI is recorded in
 `ml/deployment/llama_r128_ensemble_artifact.json`. Set the secret to the exact
 output of:

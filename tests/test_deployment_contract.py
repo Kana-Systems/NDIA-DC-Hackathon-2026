@@ -48,6 +48,7 @@ def test_govcloud_alb_has_allowlist_waf_and_rate_limit_controls() -> None:
     statements = {statement["Sid"]: statement for statement in policy["Statement"]}
     firewall = statements["ManageProjectWebFirewall"]
     parameter = statements["ReadTrustedIngressParameter"]
+    managed_rules = statements["UseRegionalManagedRuleSets"]
     waf = (ROOT / "infra/terraform/waf.tf").read_text()
     main = (ROOT / "infra/terraform/main.tf").read_text()
     bootstrap = (ROOT / "scripts/bootstrap-govcloud.ps1").read_text()
@@ -55,6 +56,10 @@ def test_govcloud_alb_has_allowlist_waf_and_rate_limit_controls() -> None:
 
     assert parameter["Action"] == "ssm:GetParameter"
     assert parameter["Resource"].endswith(":parameter/contract-review/*")
+    assert set(managed_rules["Action"]) == {"wafv2:CreateWebACL", "wafv2:UpdateWebACL"}
+    assert managed_rules["Resource"] == (
+        "arn:aws-us-gov:wafv2:us-gov-west-1:${aws:PrincipalAccount}:regional/managedruleset/*/*"
+    )
     assert {
         "wafv2:CreateWebACL",
         "wafv2:AssociateWebACL",
@@ -234,6 +239,11 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     assert "enable_network_isolation = true" in endpoint
     assert "instance_type" in endpoint
     assert "var.classifier_endpoint_instance_type" in endpoint
+    assert 'managed_classifier_endpoint_name = "${local.name}-llama-cuad-g6"' in endpoint
+    assert (
+        '{ name = "CLASSIFIER_ENDPOINT_NAME", value = local.effective_classifier_endpoint_name }'
+        in terraform
+    )
     assert 'default     = "ml.g6.2xlarge"' in variables
     assert "ml.g6e." not in variables
     assert 'var.classifier_endpoint_instance_type == "ml.g6.2xlarge"' in variables
