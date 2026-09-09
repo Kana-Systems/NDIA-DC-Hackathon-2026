@@ -1,6 +1,6 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { apiClient } from './api/client'
 
@@ -30,6 +30,7 @@ async function login() {
   return user
 }
 describe('Connected Lens workspace', () => {
+  beforeEach(() => { vi.spyOn(window, 'scrollTo').mockImplementation(() => {}) })
   afterEach(() => { cleanup(); apiClient.logout(); vi.restoreAllMocks() })
   it('uses Kana Legal branding on sign-in and the workspace', async () => {
     mockApi()
@@ -79,20 +80,61 @@ describe('Connected Lens workspace', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/local api is unavailable/i)
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
-  it('navigates the six connected workspaces and distinguishes catalog from indexed data', async () => {
+  it('groups all six workspaces under four destinations without losing access', async () => {
     mockApi()
     const user = await login()
-    await user.click(screen.getByRole('button', { name: /source library/i }))
+    expect(within(screen.getByRole('navigation', { name: 'Main navigation' })).getAllByRole('button')).toHaveLength(4)
+    await user.click(screen.getByRole('button', { name: /^sources$/i }))
     await screen.findByRole('heading', { name: /source library/i })
     await user.click(screen.getByRole('button', { name: /available sources/i }))
     expect(await screen.findByText('FAR Part 52')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /data connections/i }))
     expect(await screen.findByText(/dynamodb/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^knowledge$/i }))
+    expect(await screen.findByRole('heading', { name: /reviewed records/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /entities & relationships/i }))
     expect(await screen.findByRole('heading', { name: /entities & relationships/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /reviewed records/i }))
     expect(await screen.findByRole('heading', { name: /reviewed records/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /target objects/i })).not.toBeInTheDocument()
+  })
+  it('collapses by keyboard, keeps named navigation usable, and expands without losing context', async () => {
+    mockApi()
+    const user = await login()
+    const toggle = screen.getByRole('button', { name: 'Collapse sidebar' })
+    toggle.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false')
+    expect(document.querySelector('.lens-workspace')).toHaveClass('sidebar-collapsed')
+    await user.click(screen.getByRole('button', { name: 'Sources' }))
+    await user.click(screen.getByRole('button', { name: 'Data connections' }))
+    expect(screen.getByRole('button', { name: 'Sources' })).toHaveAttribute('aria-current', 'page')
+    expect(document.getElementById('workspace-main')).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Expand sidebar' }))
+    expect(document.querySelector('.lens-workspace')).not.toHaveClass('sidebar-collapsed')
+    expect(screen.getByRole('heading', { name: 'Data connections' })).toBeInTheDocument()
+    expect(document.querySelector('.brand-name')).toHaveTextContent('Kana Legal')
+    expect(document.querySelector('.brand-name br')).toBeNull()
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'instant' })
+  })
+  it('defaults to configured SharePoint and can check and save the actual connection', async () => {
+    const fetch = mockApi([], (url, init) => {
+      if (url.endsWith('/connections') && init?.method !== 'POST') return json({ connections: [], sharepoint_available: true, shared_folder_available: false, automatic_sync_seconds: 900, persistence: 'dynamodb', security_domain: 'demo' })
+      if (url.endsWith('/connections/sharepoint/check')) return json({ site: 'Approved site', library: 'Documents', connected: true })
+      if (url.endsWith('/connections') && init?.method === 'POST') return json({ id: 'connection-1' })
+    })
+    const user = await login()
+    await user.click(screen.getByRole('button', { name: 'Sources' }))
+    await user.click(screen.getByRole('button', { name: 'Data connections' }))
+    await waitFor(() => expect(screen.getByLabelText('Source type')).toHaveValue('sharepoint'))
+    await user.click(screen.getByRole('button', { name: 'Test SharePoint access' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Approved site / Documents: connected')
+    await user.type(screen.getByLabelText('Name'), 'Original contracts')
+    await user.click(screen.getByRole('button', { name: 'Save connection' }))
+    const save = fetch.mock.calls.find(([url, init]) => String(url).endsWith('/connections') && init?.method === 'POST')
+    expect(JSON.parse(save?.[1]?.body as string)).toEqual({ name: 'Original contracts', provider: 'sharepoint', folder: '', category: 'reference' })
+    expect(document.querySelector('.connection-setup .sharepoint-check')).toBeInTheDocument()
+    expect(document.querySelector('.connection-setup form')).toBeInTheDocument()
   })
   it('renders saved findings safely and retains contract context in follow-up questions', async () => {
     const hostile = '<img src=x onerror="alert(1)">'

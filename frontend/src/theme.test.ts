@@ -15,6 +15,17 @@ function contrast(a: string, b: string) {
 }
 
 describe('Kana Legal ocean theme', () => {
+  it('supports a compact sidebar and native scrolling with reduced-motion overrides', () => {
+    expect(stylesheet).toContain('.brand-name { white-space: nowrap; }')
+    expect(stylesheet).toContain('.sidebar-collapsed { --sidebar-width: 84px; }')
+    expect(stylesheet).toContain('scrollbar-gutter: stable')
+    expect(stylesheet).toContain('scroll-behavior: smooth')
+    const reducedMotion = stylesheet.slice(stylesheet.indexOf('@media (prefers-reduced-motion: reduce)'))
+    expect(reducedMotion).toContain('html { scroll-behavior: auto; }')
+    expect(reducedMotion).toContain('.sidebar, .workspace-body { transition: none; }')
+    const mobile = stylesheet.slice(stylesheet.indexOf('@media (max-width: 760px)'))
+    expect(mobile).toContain('.sidebar-collapsed .sidebar nav, .sidebar-collapsed .sidebar-bottom { display: none; }')
+  })
   it('separates the ocean-blue sidebar from the darker workspace', () => {
     expect(tokens.get('sidebar')).toBe('#19394e')
     expect(luminance(tokens.get('sidebar')!)).toBeGreaterThan(luminance(tokens.get('bg')!) * 2)
