@@ -7,16 +7,13 @@ import time
 from pathlib import Path
 
 import numpy as np
-from sklearn.metrics import (
-    classification_report,
-    f1_score,
-    fbeta_score,
-    precision_score,
-    recall_score,
-)
+from sklearn.metrics import classification_report, fbeta_score, precision_score
 
 from ml.inference import model_fn, predict_fn
+from ml.metrics import classification_metrics, document_cluster_bootstrap_delta
 from ml.train import read_jsonl
+
+VALIDATION_SPLIT = "validation.jsonl"
 
 
 def digest(path):
@@ -48,24 +45,54 @@ def partition(records):
     return calibration, ~calibration
 
 
-def metrics(y, predicted, labels=None):
-    result = {
-        "micro_f1": float(f1_score(y, predicted, average="micro", zero_division=0)),
-        "micro_f2": float(fbeta_score(y, predicted, beta=2, average="micro", zero_division=0)),
-        "precision": float(precision_score(y, predicted, average="micro", zero_division=0)),
-        "recall": float(recall_score(y, predicted, average="micro", zero_division=0)),
-        "macro_f1": float(f1_score(y, predicted, average="macro", zero_division=0)),
-        "macro_recall": float(recall_score(y, predicted, average="macro", zero_division=0)),
-        "predicted_labels_per_window": float(predicted.sum(axis=1).mean()),
-    }
-    if labels is not None:
-        result["per_label"] = classification_report(
-            y, predicted, target_names=labels, output_dict=True, zero_division=0
+def metrics(
+    y,
+    predicted,
+    labels=None,
+    probability_scores=None,
+    reliability_bin_count=10,
+    *,
+    probabilities=None,
+):
+    """Compatibility wrapper around the shared multi-label metric report."""
+
+    if probability_scores is not None and probabilities is not None:
+        raise ValueError("provide probability_scores or probabilities, not both")
+    score_values = probabilities if probabilities is not None else probability_scores
+    result = classification_metrics(
+        y,
+        predicted,
+        labels,
+        probabilities=score_values,
+        reliability_bin_count=reliability_bin_count,
+    )
+    result["precision"] = result["micro_precision"]
+    result["recall"] = result["micro_recall"]
+    predicted_array = np.asarray(predicted)
+    if predicted_array.ndim == 1:
+        predicted_array = predicted_array.reshape(-1, 1)
+    result["predicted_labels_per_window"] = (
+        float(predicted_array.sum(axis=1).mean()) if predicted_array.shape[0] else 0.0
+    )
+    if labels:
+        legacy_report = classification_report(
+            y,
+            predicted,
+            target_names=labels,
+            output_dict=True,
+            zero_division=0,
+        )
+        result["per_label"].update(
+            {
+                key: value
+                for key, value in legacy_report.items()
+                if key not in result["per_label"]
+            }
         )
     return result
 
 
-def fit_thresholds(y, probabilities, labels, document_ids, precision_floor=0.75):
+def fit_thresholds(y, probabilities, labels, document_ids, precision_floor=0.80):
     """Threshold fitting only: no test labels and no selection labels accepted."""
     grid = np.linspace(0.05, 0.9, 35)
     candidates = [(float(t), metrics(y, probabilities >= t)) for t in grid]
@@ -152,37 +179,26 @@ def probabilities(model_path, split_path, labels, output):
     return matrix, model_id, seconds
 
 
-def paired_interval(y, baseline, candidate, documents, samples=1000):
+def paired_interval(
+    y,
+    baseline,
+    candidate,
+    documents,
+    samples=1000,
+    *,
+    seed=17,
+    metric="micro_f2",
+):
     """Document-cluster bootstrap, never treat overlapping windows as independent."""
-    groups = sorted(set(documents))
-    counts = []
-    documents = np.array(documents)
-    for group in groups:
-        mask = documents == group
-        pair = []
-        for prediction in (baseline, candidate):
-            pair.append(
-                [
-                    np.logical_and(y[mask], prediction[mask]).sum(),
-                    np.logical_and(~y[mask], prediction[mask]).sum(),
-                    np.logical_and(y[mask], ~prediction[mask]).sum(),
-                ]
-            )
-        counts.append(pair)
-    counts = np.array(counts)
-    rng = np.random.default_rng(17)
-    values = []
-    for _ in range(samples):
-        totals = counts[rng.integers(0, len(groups), len(groups))].sum(axis=0)
-        scores = [5 * tp / max(1, 5 * tp + 4 * fn + fp) for tp, fp, fn in totals]
-        values.append(scores[1] - scores[0])
-    return {
-        "metric": "micro_f2_delta",
-        "unit": "document",
-        "samples": samples,
-        "lower_95": float(np.quantile(values, 0.025)),
-        "upper_95": float(np.quantile(values, 0.975)),
-    }
+    return document_cluster_bootstrap_delta(
+        y,
+        baseline,
+        candidate,
+        documents,
+        metric=metric,
+        samples=samples,
+        seed=seed,
+    )
 
 
 def main():
@@ -191,9 +207,12 @@ def main():
     parser.add_argument("--data", type=Path, default=Path("ml/data/comparison"))
     parser.add_argument("--output", type=Path, default=Path("artifacts/improvement"))
     parser.add_argument("--report-test", action="store_true")
+    parser.add_argument("--bootstrap-samples", type=int, default=1000)
+    parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--reliability-bins", type=int, default=10)
     args = parser.parse_args()
     labels = json.loads((args.data / "labels.json").read_text())
-    records = read_jsonl(args.data / "validation.jsonl")
+    records = read_jsonl(args.data / VALIDATION_SPLIT)
     train = read_jsonl(args.data / "train.jsonl")
     test = read_jsonl(args.data / "test.jsonl")
     groups = [{r["document_id"] for r in part} for part in (train, records, test)]
@@ -205,14 +224,14 @@ def main():
     all_rows, predictions = [], []
     for path in args.models:
         scores, model_id, seconds = probabilities(
-            path, args.data / "validation.jsonl", labels, args.output
+            path, args.data / VALIDATION_SPLIT, labels, args.output
         )
         tuning = fit_thresholds(y[calibration], scores[calibration], labels, docs[calibration])
         tuning.update(
             {
                 "schema_version": "1.0",
                 "model_id": model_id,
-                "validation_sha256": digest(args.data / "validation.jsonl"),
+                "validation_sha256": digest(args.data / VALIDATION_SPLIT),
                 "calibration_document_ids": sorted(set(docs[calibration])),
                 "selection_document_ids": sorted(set(docs[selection])),
             }
@@ -232,17 +251,28 @@ def main():
                     "kind": kind,
                     "thresholds_path": str(tuning_path) if kind == "tuned" else "",
                     "validation_inference_seconds": seconds,
-                    "selection": metrics(y[selection], predicted, labels),
+                    "selection": metrics(
+                        y[selection],
+                        predicted,
+                        labels,
+                        scores[selection],
+                        args.reliability_bins,
+                    ),
                 }
             )
-    eligible = [i for i, r in enumerate(all_rows) if r["selection"]["precision"] >= 0.75]
+    eligible = [i for i, r in enumerate(all_rows) if r["selection"]["precision"] >= 0.80]
     best = max(eligible, key=lambda i: all_rows[i]["selection"]["micro_f2"]) if eligible else 0
     report = {
-        "selection_criterion": "selection micro-F2 with precision >= .75; else incumbent",
+        "selection_criterion": "selection micro-F2 with precision >= .80; else incumbent",
         "candidates": all_rows,
         "candidate": all_rows[best],
         "paired_selection_delta": paired_interval(
-            y[selection], predictions[0], predictions[best], docs[selection]
+            y[selection],
+            predictions[0],
+            predictions[best],
+            docs[selection],
+            samples=args.bootstrap_samples,
+            seed=args.seed,
         ),
         "promoted": False,
         "downstream_llm_benefit": "not established",
@@ -264,7 +294,13 @@ def main():
             if row["thresholds_path"]:
                 tuning = json.loads(Path(row["thresholds_path"]).read_text())
                 thresholds = np.array([tuning["thresholds"][label] for label in labels])
-            row["regression_test"] = metrics(encode(test, labels), scores >= thresholds, labels)
+            row["regression_test"] = metrics(
+                encode(test, labels),
+                scores >= thresholds,
+                labels,
+                scores,
+                args.reliability_bins,
+            )
     atomic_json(args.output / "comparison.json", report)
     atomic_json(
         args.output / "progress.json",

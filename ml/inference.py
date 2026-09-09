@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -75,11 +76,15 @@ def model_fn(model_dir: str) -> Any:
     if not (path / "config.json").exists():
         return HeuristicClassifier()
     try:
+        import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
     except ImportError as error:
         raise RuntimeError(
             "a packaged transformer model requires transformers and torch"
         ) from error
+    batch_size = int(os.getenv("MODEL_INFERENCE_BATCH_SIZE", "16"))
+    if batch_size < 1:
+        raise ValueError("MODEL_INFERENCE_BATCH_SIZE must be positive")
     model = AutoModelForSequenceClassification.from_pretrained(path)
     tokenizer = AutoTokenizer.from_pretrained(path)
     predictor = pipeline(
@@ -87,7 +92,8 @@ def model_fn(model_dir: str) -> Any:
         model=model,
         tokenizer=tokenizer,
         top_k=None,
-        batch_size=16,
+        batch_size=batch_size,
+        device=0 if torch.cuda.is_available() else -1,
     )
     return TransformerClassifier(predictor=predictor, **_artifact_settings(path))
 

@@ -1,0 +1,11 @@
+# Use a Runpod/PyTorch image whose CUDA build matches the installed driver.
+# The matrix records exact installed versions and GPU/driver details at runtime.
+torch>=2.5,<3
+transformers>=4.48,<5
+accelerate>=1.2,<2
+huggingface-hub>=0.27,<2
+numpy>=1.26,<3
+protobuf>=5,<7
+psutil>=6,<8
+safetensors>=0.4.5,<1
+sentencepiece>=0.2,<1

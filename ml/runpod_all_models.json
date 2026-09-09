@@ -1,0 +1,23 @@
+{
+  "finalist_count": 4,
+  "seeds": [
+    17
+  ],
+  "screens": [
+    {
+      "name": "screen-all",
+      "epochs": 1.0,
+      "max_steps": 48,
+      "eval_steps": 24,
+      "keep_count": 4,
+      "early_stopping_patience": 1
+    }
+  ],
+  "full": {
+    "name": "full",
+    "epochs": 1.0,
+    "max_steps": -1,
+    "eval_steps": 50,
+    "early_stopping_patience": 2
+  }
+}

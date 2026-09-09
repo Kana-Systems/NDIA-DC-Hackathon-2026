@@ -2,7 +2,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from evaluation.cost_guard import BudgetedAdapter, BudgetExceeded, CostGuard, cost
+from evaluation.cost_guard import (
+    DEFAULT_MAX_REQUESTS,
+    HARD_MAX_REQUESTS,
+    BudgetedAdapter,
+    BudgetExceeded,
+    CostGuard,
+    cost,
+)
 
 
 class FakeAdapter:
@@ -54,11 +61,38 @@ def test_failures_and_unknown_usage_keep_reservation_across_restart(tmp_path, fa
 
 def test_wrong_model_or_oversized_request_rejected(tmp_path):
     guard = CostGuard(tmp_path / "cost.json")
+    oversized_adapter = FakeAdapter(guard)
     with pytest.raises(ValueError):
-        guard.request(FakeAdapter(guard), {"text": "a" * 200000}, 100)
+        guard.request(oversized_adapter, {"text": "a" * 200000}, 100)
     adapter = FakeAdapter(guard)
     adapter.settings = SimpleNamespace(bedrock_model_id="different", aws_region="us-gov-west-1")
     with pytest.raises(ValueError):
         BudgetedAdapter(adapter, guard)
     with pytest.raises(ValueError):
         CostGuard(tmp_path / "other.json", 11)
+
+
+def test_configurable_request_limit_is_persistent_and_fail_closed(tmp_path):
+    path = tmp_path / "cost.json"
+    guard = CostGuard(path, max_requests=1)
+    adapter = FakeAdapter(guard)
+    guard.request(adapter, {}, 100)
+    with pytest.raises(BudgetExceeded, match="1-attempt"):
+        guard.request(adapter, {}, 100)
+    assert adapter.calls == 1
+    assert CostGuard(path, max_requests=1).load()["max_requests"] == 1
+    changed_guard = CostGuard(path, max_requests=2)
+    with pytest.raises(ValueError, match="Cannot change"):
+        changed_guard.load()
+
+
+def test_guard_defaults_and_hard_maxima(tmp_path):
+    ledger = CostGuard(tmp_path / "default.json").load()
+    assert ledger["max_requests"] == DEFAULT_MAX_REQUESTS
+    assert ledger["hard_max_requests"] == HARD_MAX_REQUESTS
+    with pytest.raises(ValueError, match="Request limit"):
+        CostGuard(tmp_path / "too-many.json", max_requests=HARD_MAX_REQUESTS + 1)
+    with pytest.raises(ValueError):
+        CostGuard(tmp_path / "bool-budget.json", True)
+    with pytest.raises(ValueError):
+        cost(True, 1)

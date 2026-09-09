@@ -21,6 +21,12 @@ PRICING_SOURCE = (
 # higher cache-write input rate, ignoring cache savings entirely.
 INPUT_PER_MILLION = 3.30
 OUTPUT_PER_MILLION = 15.84
+DEFAULT_LIMIT_USD = 10.0
+HARD_MAX_LIMIT_USD = 10.0
+DEFAULT_MAX_REQUESTS = 96
+HARD_MAX_REQUESTS = 512
+MAX_INPUT_BYTES = 200_000
+MAX_OUTPUT_TOKENS = 6_000
 
 
 class BudgetExceeded(RuntimeError):
@@ -50,27 +56,88 @@ def exclusive_lock(path: Path):
 
 
 def cost(input_tokens, output_tokens):
+    for name, value in (("input_tokens", input_tokens), ("output_tokens", output_tokens)):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer")
     return (
         math.ceil(input_tokens * INPUT_PER_MILLION + output_tokens * OUTPUT_PER_MILLION) / 1_000_000
     )
 
 
 class CostGuard:
-    def __init__(self, path: Path, limit_usd=10.0):
-        if not 0 < limit_usd <= 10:
-            raise ValueError("This run is approved for at most $10")
-        self.path = path
-        self.limit = limit_usd
+    def __init__(
+        self,
+        path: Path,
+        limit_usd=DEFAULT_LIMIT_USD,
+        max_requests=DEFAULT_MAX_REQUESTS,
+    ):
+        if (
+            not isinstance(limit_usd, (int, float))
+            or isinstance(limit_usd, bool)
+            or not math.isfinite(limit_usd)
+            or not 0 < limit_usd <= HARD_MAX_LIMIT_USD
+        ):
+            raise ValueError(f"Budget must be above $0 and at most ${HARD_MAX_LIMIT_USD:g}")
+        if (
+            not isinstance(max_requests, int)
+            or isinstance(max_requests, bool)
+            or not 1 <= max_requests <= HARD_MAX_REQUESTS
+        ):
+            raise ValueError(
+                f"Request limit must be an integer from 1 through {HARD_MAX_REQUESTS}"
+            )
+        self.path = Path(path)
+        self.limit = float(limit_usd)
+        self.max_requests = max_requests
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def load(self):
         if self.path.exists():
             ledger = json.loads(self.path.read_text())
-            if ledger["limit_usd"] != self.limit:
-                raise ValueError("Cannot change the budget of an existing run")
+            if not isinstance(ledger, dict) or not isinstance(ledger.get("requests"), list):
+                raise ValueError("Malformed cost ledger")
+            # Ledgers created before request limits were configurable used 96.
+            stored_max_requests = ledger.get("max_requests", DEFAULT_MAX_REQUESTS)
+            stored_limit = ledger.get("limit_usd")
+            if (
+                not isinstance(stored_limit, (int, float))
+                or isinstance(stored_limit, bool)
+                or not math.isfinite(stored_limit)
+                or not isinstance(stored_max_requests, int)
+                or isinstance(stored_max_requests, bool)
+                or not 1 <= stored_max_requests <= HARD_MAX_REQUESTS
+            ):
+                raise ValueError("Malformed cost ledger limits")
+            if (
+                stored_limit != self.limit
+                or stored_max_requests != self.max_requests
+            ):
+                raise ValueError("Cannot change the budget or request limit of an existing run")
+            for record in ledger["requests"]:
+                accounted = record.get("accounted_usd")
+                if (
+                    not isinstance(accounted, (int, float))
+                    or isinstance(accounted, bool)
+                    or not math.isfinite(accounted)
+                    or accounted < 0
+                ):
+                    raise ValueError("Malformed cost ledger request")
+            accounted = ledger.get("accounted_usd")
+            request_total = sum(record["accounted_usd"] for record in ledger["requests"])
+            if (
+                not isinstance(accounted, (int, float))
+                or isinstance(accounted, bool)
+                or not math.isfinite(accounted)
+                or not math.isclose(accounted, request_total, rel_tol=0, abs_tol=1e-12)
+            ):
+                raise ValueError("Cost ledger total does not match its requests")
+            ledger.setdefault("max_requests", stored_max_requests)
             return ledger
         return {
             "limit_usd": self.limit,
+            "max_requests": self.max_requests,
+            "hard_max_limit_usd": HARD_MAX_LIMIT_USD,
+            "hard_max_requests": HARD_MAX_REQUESTS,
             "pricing_source": PRICING_SOURCE,
             "pricing_checked": "2026-09-08",
             "input_rate": INPUT_PER_MILLION,
@@ -81,19 +148,26 @@ class CostGuard:
         }
 
     def request(self, delegate, prompt, max_output_tokens):
-        if not isinstance(max_output_tokens, int) or not 1 <= max_output_tokens <= 6000:
+        if (
+            not isinstance(max_output_tokens, int)
+            or isinstance(max_output_tokens, bool)
+            or not 1 <= max_output_tokens <= MAX_OUTPUT_TOKENS
+        ):
             raise ValueError("Output exceeds approved per-request token bound")
         # Byte count deliberately overestimates text BPE tokens; headroom covers
         # the Responses envelope. Large contexts are rejected, not repriced.
         input_bound = len(json.dumps(prompt, separators=(",", ":")).encode()) + 1024
-        if input_bound > 200_000:
+        if input_bound > MAX_INPUT_BYTES:
             raise ValueError("Request exceeds the short-context budget guard")
         reserve = cost(input_bound, max_output_tokens)
         with exclusive_lock(self.path.with_suffix(".lock")):
             ledger = self.load()
             spent = sum(r["accounted_usd"] for r in ledger["requests"])
-            if spent + reserve > self.limit or len(ledger["requests"]) >= 96:
-                raise BudgetExceeded("Next request could exceed the $10 or 96-attempt limit")
+            if spent + reserve > self.limit or len(ledger["requests"]) >= self.max_requests:
+                raise BudgetExceeded(
+                    "Next request could exceed the configured "
+                    f"${self.limit:g} or {self.max_requests}-attempt limit"
+                )
             record = {
                 "started_at": datetime.now(UTC).isoformat(),
                 "reserved_usd": reserve,
