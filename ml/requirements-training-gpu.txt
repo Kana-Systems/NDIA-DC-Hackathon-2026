@@ -4,6 +4,7 @@ torch>=2.5,<3
 transformers>=4.48,<5
 accelerate>=1.2,<2
 huggingface-hub>=0.27,<2
+peft>=0.14,<0.18
 numpy>=1.26,<3
 protobuf>=5,<7
 psutil>=6,<8

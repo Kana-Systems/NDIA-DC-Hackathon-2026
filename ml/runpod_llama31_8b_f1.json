@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "selection_metric": "eval_micro_f1_tuned",
+  "finalist_count": 1,
+  "seeds": [
+    17
+  ],
+  "execution": {
+    "gpus_per_run": 1,
+    "max_concurrent_runs": 1,
+    "deterministic": true,
+    "precision": "auto"
+  },
+  "candidates": [
+    {
+      "name": "Llama-3.1-8B-CUAD-LoRA-r16",
+      "model_name": "meta-llama/Llama-3.1-8B",
+      "revision": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license": "llama3.1",
+      "license_url": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+      "model_card_url": "https://huggingface.co/meta-llama/Llama-3.1-8B",
+      "metadata_api_url": "https://huggingface.co/api/models/meta-llama/Llama-3.1-8B",
+      "metadata_checked_at": "2026-09-09",
+      "source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/tree/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license_source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/blob/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b/README.md",
+      "positive_weight_cap": 2.0,
+      "learning_rate": 0.0001,
+      "batch_size": 16,
+      "gradient_accumulation_steps": 1,
+      "gradient_checkpointing": false,
+      "max_length": 512,
+      "extra_args": [
+        "--metric-for-best-model",
+        "micro_f1_tuned",
+        "--lora-rank",
+        "16",
+        "--lora-alpha",
+        "32",
+        "--lora-dropout",
+        "0.05",
+        "--lora-target-modules",
+        "q_proj,k_proj,v_proj,o_proj"
+      ]
+    },
+    {
+      "name": "Llama-3.1-8B-CUAD-LoRA-r64",
+      "model_name": "meta-llama/Llama-3.1-8B",
+      "revision": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license": "llama3.1",
+      "license_url": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+      "model_card_url": "https://huggingface.co/meta-llama/Llama-3.1-8B",
+      "metadata_api_url": "https://huggingface.co/api/models/meta-llama/Llama-3.1-8B",
+      "metadata_checked_at": "2026-09-09",
+      "source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/tree/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "license_source_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/blob/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b/README.md",
+      "positive_weight_cap": 2.0,
+      "learning_rate": 0.0001,
+      "batch_size": 16,
+      "gradient_accumulation_steps": 1,
+      "gradient_checkpointing": false,
+      "max_length": 512,
+      "extra_args": [
+        "--metric-for-best-model",
+        "micro_f1_tuned",
+        "--lora-rank",
+        "64",
+        "--lora-alpha",
+        "128",
+        "--lora-dropout",
+        "0.05",
+        "--lora-target-modules",
+        "q_proj,k_proj,v_proj,o_proj"
+      ]
+    }
+  ],
+  "smoke": {
+    "name": "smoke",
+    "epochs": 1.0,
+    "max_steps": 6,
+    "eval_steps": 3,
+    "keep_count": 2,
+    "early_stopping_patience": 0
+  },
+  "screens": [
+    {
+      "name": "screen-f1",
+      "epochs": 1.0,
+      "max_steps": 48,
+      "eval_steps": 24,
+      "keep_count": 1,
+      "early_stopping_patience": 2
+    }
+  ],
+  "full": {
+    "name": "full",
+    "epochs": 1.0,
+    "max_steps": -1,
+    "eval_steps": 50,
+    "early_stopping_patience": 1
+  },
+  "optimizer": {
+    "warmup_ratio": 0.1,
+    "weight_decay": 0.01
+  }
+}

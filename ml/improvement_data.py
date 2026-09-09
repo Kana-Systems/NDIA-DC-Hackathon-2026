@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ml.preprocess_cuad import examples, write_jsonl
+from ml.splits import is_calibration_document
 from ml.train import read_jsonl
 
 
@@ -53,9 +54,23 @@ def prepare(
         raise ValueError(
             f"regenerated training documents differ; missing={missing_ids}, extra={extra_ids}"
         )
+    source_validation = read_jsonl(source / "validation.jsonl")
+    checkpoint_validation = [
+        row for row in source_validation if is_calibration_document(row["document_id"])
+    ]
+    selection_validation = [
+        row for row in source_validation if not is_calibration_document(row["document_id"])
+    ]
+    checkpoint_ids = {row["document_id"] for row in checkpoint_validation}
+    selection_ids = {row["document_id"] for row in selection_validation}
+    if not checkpoint_validation or not selection_validation:
+        raise ValueError("validation data must contain distinct checkpoint and selection documents")
+    if checkpoint_ids & selection_ids:
+        raise ValueError("checkpoint and selection validation documents overlap")
     output.mkdir(parents=True, exist_ok=True)
     write_jsonl(output / "train.jsonl", regenerated)
-    for name in required[1:]:
+    write_jsonl(output / "validation.jsonl", checkpoint_validation)
+    for name in required[2:]:
         shutil.copyfile(source / name, output / name)
     manifest = {
         "schema_version": "2.0",
@@ -66,10 +81,16 @@ def prepare(
         "source_files_sha256": {name: sha256(source / name) for name in required},
         "output_files_sha256": {name: sha256(output / name) for name in required},
         "preparation_code_sha256": sha256(Path(__file__)),
+        "partition_code_sha256": sha256(Path(__file__).with_name("splits.py")),
         "change": "deterministic spread of negative windows across training contracts",
         "training_documents": len(training_ids),
         "training_windows": len(regenerated),
-        "validation_and_test_copied_without_modification": True,
+        "checkpoint_validation_documents": len(checkpoint_ids),
+        "checkpoint_validation_windows": len(checkpoint_validation),
+        "selection_validation_documents_reserved": len(selection_ids),
+        "selection_validation_windows_reserved": len(selection_validation),
+        "checkpoint_validation_is_document_disjoint_from_selection": True,
+        "test_copied_without_modification": True,
         "synthetic_federal_cases_used_for_training": False,
     }
     target = output / "preparation.json"

@@ -13,7 +13,7 @@ from evaluation.gate1_classifier import (
     evaluate_gate1,
 )
 from ml.metrics import slice_metrics
-from ml.preprocess_cuad import _answer_spans, write_jsonl
+from ml.preprocess_cuad import _answer_spans, labels_for_bounds, write_jsonl
 from ml.train import read_jsonl
 from ml.tune_models import (
     atomic_json,
@@ -44,24 +44,18 @@ def prepare(raw, ids, config):
                     config["stride_chars"],
                 )
             ):
-                labels = {
-                    span["label"]
-                    for span in spans
-                    if max(0, min(end, span["end"]) - max(start, span["start"]))
-                    >= 0.5 * min(span["end"] - span["start"], end - start)
-                }
+                labels = labels_for_bounds(spans, start, end)
                 rows.append(
                     {
                         "id": (
-                            f"{doc['title']}:{paragraph_number}:"
-                            f"production-w{window_number:05d}"
+                            f"{doc['title']}:{paragraph_number}:production-w{window_number:05d}"
                         ),
                         "document_id": doc["title"],
                         "paragraph_number": paragraph_number,
                         "start_char": start,
                         "end_char": end,
                         "text": text[start:end],
-                        "labels": sorted(labels),
+                        "labels": labels,
                     }
                 )
     return rows
@@ -101,9 +95,7 @@ def _support(expected, records, labels):
     return {
         label: {
             "positive_windows": int(expected[:, index].sum()),
-            "positive_documents": len(
-                set(documents[expected[:, index]].tolist())
-            ),
+            "positive_documents": len(set(documents[expected[:, index]].tolist())),
         }
         for index, label in enumerate(labels)
     }
@@ -214,6 +206,7 @@ def main(argv=None):
         documents,
         samples=args.bootstrap_samples,
         seed=args.seed,
+        metric="micro_f1",
     )
     metric_keys = (
         "micro_precision",
@@ -230,9 +223,7 @@ def main(argv=None):
     )
     incumbent_metrics = results[0]["metrics"]
     candidate_metrics = results[1]["metrics"]
-    metric_deltas = {
-        key: candidate_metrics[key] - incumbent_metrics[key] for key in metric_keys
-    }
+    metric_deltas = {key: candidate_metrics[key] - incumbent_metrics[key] for key in metric_keys}
     support = _support(expected, records, labels)
     configured_critical = args.critical_label or [
         label for label in DEFAULT_CRITICAL_LABELS if label in labels
@@ -273,7 +264,7 @@ def main(argv=None):
         "models": {result["role"]: result for result in results},
         "comparison": {
             "candidate_minus_incumbent": metric_deltas,
-            "paired_micro_f2_delta": paired_delta,
+            "paired_micro_f1_delta": paired_delta,
             "calibration": {
                 "incumbent": {
                     "brier": incumbent_metrics["brier"],

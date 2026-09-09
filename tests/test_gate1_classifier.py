@@ -20,7 +20,7 @@ def passing_inputs():
     }
     candidate = {
         "micro_precision": 0.84,
-        "micro_recall": 0.78,
+        "micro_recall": 0.82,
         "macro_f1": 0.55,
         "brier": 0.14,
         "ece": 0.08,
@@ -29,7 +29,7 @@ def passing_inputs():
             "rare_critical": {"support": 1, "recall": 0.0},
         },
     }
-    interval = {"metric": "micro_f2_delta", "lower_95": 0.01, "upper_95": 0.08}
+    interval = {"metric": "micro_f1_delta", "lower_95": 0.01, "upper_95": 0.08}
     return incumbent, candidate, interval
 
 
@@ -60,7 +60,7 @@ def test_gate1_passes_all_thresholds_and_supported_critical_labels(passing_input
     [
         (("interval", "lower_95", 0.0), "paired_improvement"),
         (("candidate", "micro_precision", 0.79), "micro_precision"),
-        (("candidate", "micro_recall", 0.74), "micro_recall"),
+        (("candidate", "micro_recall", 0.79), "micro_recall"),
         (("candidate", "macro_f1", 0.49), "macro_f1"),
         (("candidate", "brier", 0.17), "calibration_improves"),
     ],

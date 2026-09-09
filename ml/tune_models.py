@@ -7,13 +7,16 @@ import time
 from pathlib import Path
 
 import numpy as np
-from sklearn.metrics import classification_report, fbeta_score, precision_score
+from sklearn.metrics import classification_report, f1_score, precision_score, recall_score
 
 from ml.inference import model_fn, predict_fn
 from ml.metrics import classification_metrics, document_cluster_bootstrap_delta
+from ml.splits import is_calibration_document
 from ml.train import read_jsonl
 
 VALIDATION_SPLIT = "validation.jsonl"
+MINIMUM_PRECISION = 0.80
+MINIMUM_RECALL = 0.80
 
 
 def digest(path):
@@ -33,13 +36,7 @@ def encode(records, labels):
 
 
 def partition(records):
-    calibration = np.array(
-        [
-            int(hashlib.sha256(("calibration-v1:" + r["document_id"]).encode()).hexdigest(), 16) % 2
-            == 0
-            for r in records
-        ]
-    )
+    calibration = np.array([is_calibration_document(r["document_id"]) for r in records])
     if not calibration.any() or calibration.all():
         raise ValueError("Need distinct calibration and selection documents")
     return calibration, ~calibration
@@ -83,22 +80,41 @@ def metrics(
             zero_division=0,
         )
         result["per_label"].update(
-            {
-                key: value
-                for key, value in legacy_report.items()
-                if key not in result["per_label"]
-            }
+            {key: value for key, value in legacy_report.items() if key not in result["per_label"]}
         )
     return result
 
 
-def fit_thresholds(y, probabilities, labels, document_ids, precision_floor=0.80):
+def fit_thresholds(
+    y,
+    probabilities,
+    labels,
+    document_ids,
+    precision_floor=MINIMUM_PRECISION,
+    recall_floor=MINIMUM_RECALL,
+):
     """Threshold fitting only: no test labels and no selection labels accepted."""
     grid = np.linspace(0.05, 0.9, 35)
     candidates = [(float(t), metrics(y, probabilities >= t)) for t in grid]
-    eligible = [(t, m) for t, m in candidates if m["precision"] >= precision_floor]
+    eligible = [
+        (threshold, report)
+        for threshold, report in candidates
+        if report["precision"] >= precision_floor and report["recall"] >= recall_floor
+    ]
+    precision_eligible = [item for item in candidates if item[1]["precision"] >= precision_floor]
+    pool = eligible or precision_eligible
     global_t = (
-        max(eligible, key=lambda item: (item[1]["micro_f2"], item[0]))[0] if eligible else 0.5
+        max(
+            pool,
+            key=lambda item: (
+                item[1]["micro_f1"],
+                item[1]["micro_recall"],
+                item[1]["micro_precision"],
+                item[0],
+            ),
+        )[0]
+        if pool
+        else 0.5
     )
     thresholds, support = {}, {}
     for index, label in enumerate(labels):
@@ -113,17 +129,25 @@ def fit_thresholds(y, probabilities, labels, document_ids, precision_floor=0.80)
                 precision = precision_score(y[:, index], pred, zero_division=0)
                 if precision >= precision_floor:
                     options.append(
-                        (fbeta_score(y[:, index], pred, beta=2, zero_division=0), float(t))
+                        (
+                            f1_score(y[:, index], pred, zero_division=0),
+                            recall_score(y[:, index], pred, zero_division=0),
+                            precision,
+                            float(t),
+                        )
                     )
             if options:
-                threshold = max(options)[1]
+                threshold = max(options)[3]
         thresholds[label] = threshold
     return {
         "global_threshold": global_t,
         "thresholds": thresholds,
         "support": support,
         "precision_floor": precision_floor,
-        "objective": "calibration F2; rare-label global fallback",
+        "recall_floor": recall_floor,
+        "objective": (
+            "calibration micro-F1 with precision/recall floors; rare-label global fallback"
+        ),
     }
 
 
@@ -187,7 +211,7 @@ def paired_interval(
     samples=1000,
     *,
     seed=17,
-    metric="micro_f2",
+    metric="micro_f1",
 ):
     """Document-cluster bootstrap, never treat overlapping windows as independent."""
     return document_cluster_bootstrap_delta(
@@ -260,15 +284,38 @@ def main():
                     ),
                 }
             )
-    eligible = [i for i, r in enumerate(all_rows) if r["selection"]["precision"] >= 0.80]
-    best = max(eligible, key=lambda i: all_rows[i]["selection"]["micro_f2"]) if eligible else 0
+
+    def eligible(index):
+        selected = all_rows[index]["selection"]
+        return selected["precision"] >= MINIMUM_PRECISION and selected["recall"] >= MINIMUM_RECALL
+
+    incumbent_indices = [
+        index for index, row in enumerate(all_rows) if row["model_path"] == args.models[0]
+    ]
+    eligible_incumbent = [index for index in incumbent_indices if eligible(index)]
+    incumbent_best = max(
+        eligible_incumbent or incumbent_indices,
+        key=lambda index: all_rows[index]["selection"]["micro_f1"],
+    )
+    eligible_candidates = [index for index in range(len(all_rows)) if eligible(index)]
+    best = (
+        max(
+            eligible_candidates,
+            key=lambda index: all_rows[index]["selection"]["micro_f1"],
+        )
+        if eligible_candidates
+        else incumbent_best
+    )
     report = {
-        "selection_criterion": "selection micro-F2 with precision >= .80; else incumbent",
+        "selection_criterion": (
+            "selection micro-F1 with precision >= .80 and recall >= .80; else incumbent"
+        ),
         "candidates": all_rows,
+        "incumbent": all_rows[incumbent_best],
         "candidate": all_rows[best],
         "paired_selection_delta": paired_interval(
             y[selection],
-            predictions[0],
+            predictions[incumbent_best],
             predictions[best],
             docs[selection],
             samples=args.bootstrap_samples,

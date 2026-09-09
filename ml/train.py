@@ -27,6 +27,7 @@ MODULE_DIR = Path(__file__).resolve().parent
 DOMAIN_MAPPING = MODULE_DIR / "cuad_category_domain_mapping.json"
 EVALUATION_METRICS_FILE = "evaluation_metrics.json"
 WINDOW_CONFIG_FILE = "window_config.json"
+LLAMA_NOTICE_FILE = "LLAMA_3_1_NOTICE.txt"
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -75,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-ratio", type=float, default=0.0)
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument(
+        "--metric-for-best-model",
+        choices=("micro_f1", "micro_f1_tuned", "micro_f2", "accuracy"),
+        default=None,
+    )
+    parser.add_argument(
         "--evaluation-strategy",
         choices=("epoch", "steps"),
         default="epoch",
@@ -102,6 +108,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-model-metadata-checked-at", default=None)
     parser.add_argument("--heartbeat-file", type=Path, default=None)
     parser.add_argument("--telemetry-file", type=Path, default=None)
+    parser.add_argument("--lora-rank", type=int, default=0)
+    parser.add_argument("--lora-alpha", type=int, default=16)
+    parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument("--lora-target-modules", default=None)
     return parser
 
 
@@ -114,6 +124,64 @@ def positive_weights(items: list[dict], labels: list[str], cap: float) -> list[f
         min(cap, max(1.0, ((len(items) - counts[label]) / max(1, counts[label])) ** 0.5))
         for label in labels
     ]
+
+
+def tuned_micro_f1(logits: Any, references: Any) -> dict[str, float]:
+    """Find the exact best global validation threshold without a coarse grid."""
+
+    import numpy as np
+
+    logits_array = np.asarray(logits, dtype=float)
+    references_array = np.asarray(references)
+    if logits_array.shape != references_array.shape or logits_array.ndim != 2:
+        raise ValueError("logits and references must be same-shaped two-dimensional arrays")
+    if references_array.size and not np.all((references_array == 0) | (references_array == 1)):
+        raise ValueError("references must be binary")
+    if not np.all(np.isfinite(logits_array)):
+        raise ValueError("logits must be finite")
+    probabilities = 1 / (1 + np.exp(-np.clip(logits_array, -60, 60)))
+    scores = probabilities.ravel()
+    expected = references_array.astype(bool, copy=False).ravel()
+    positives = int(expected.sum())
+    if not scores.size or not positives:
+        return {
+            "micro_f1_tuned": 0.0,
+            "micro_f1_tuned_threshold": 0.5,
+            "micro_f1_tuned_precision": 0.0,
+            "micro_f1_tuned_recall": 0.0,
+        }
+    order = np.argsort(-scores, kind="stable")
+    sorted_scores = scores[order]
+    sorted_expected = expected[order].astype(np.int64)
+    group_ends = np.r_[
+        np.flatnonzero(sorted_scores[1:] != sorted_scores[:-1]),
+        scores.size - 1,
+    ]
+    true_positive = np.cumsum(sorted_expected)[group_ends]
+    predicted_positive = group_ends + 1
+    precision = true_positive / predicted_positive
+    recall = true_positive / positives
+    f1 = np.divide(
+        2 * precision * recall,
+        precision + recall,
+        out=np.zeros_like(precision, dtype=float),
+        where=(precision + recall) != 0,
+    )
+    best = max(
+        range(len(group_ends)),
+        key=lambda index: (
+            float(f1[index]),
+            float(recall[index]),
+            float(precision[index]),
+            float(sorted_scores[group_ends[index]]),
+        ),
+    )
+    return {
+        "micro_f1_tuned": float(f1[best]),
+        "micro_f1_tuned_threshold": float(sorted_scores[group_ends[best]]),
+        "micro_f1_tuned_precision": float(precision[best]),
+        "micro_f1_tuned_recall": float(recall[best]),
+    }
 
 
 def load_window_config(training_dir: Path) -> dict[str, Any]:
@@ -180,6 +248,13 @@ def training_api_kwargs(training_arguments_type: type, args: argparse.Namespace)
         raise ValueError("gradient-accumulation-steps must be positive")
     if getattr(args, "early_stopping_patience", 0) < 0:
         raise ValueError("early-stopping-patience cannot be negative")
+    metric_for_best_model = getattr(args, "metric_for_best_model", None)
+    if metric_for_best_model is None:
+        metric_for_best_model = "micro_f1" if args.problem_type == "multi_label" else "accuracy"
+    if args.problem_type == "multi_label" and metric_for_best_model == "accuracy":
+        raise ValueError("multi-label training cannot select checkpoints by accuracy")
+    if args.problem_type == "single_label" and metric_for_best_model != "accuracy":
+        raise ValueError("single-label training must select checkpoints by accuracy")
     kwargs = {
         "output_dir": str(args.checkpoint_dir),
         "num_train_epochs": args.epochs,
@@ -188,7 +263,7 @@ def training_api_kwargs(training_arguments_type: type, args: argparse.Namespace)
         "learning_rate": args.learning_rate,
         "save_strategy": strategy,
         "load_best_model_at_end": True,
-        "metric_for_best_model": ("micro_f1" if args.problem_type == "multi_label" else "accuracy"),
+        "metric_for_best_model": metric_for_best_model,
         "greater_is_better": True,
         "save_total_limit": 2,
         "seed": args.seed,
@@ -233,6 +308,7 @@ def installed_training_packages() -> dict[str, str]:
         "huggingface-hub",
         "numpy",
         "safetensors",
+        "peft",
         "sentencepiece",
         "torch",
         "transformers",
@@ -254,6 +330,136 @@ def resolve_precision(torch_module: Any, requested: str) -> str:
     if not torch_module.cuda.is_available():
         return "fp32"
     return "bf16" if torch_module.cuda.is_bf16_supported() else "fp16"
+
+
+DECODER_MODEL_TYPES = frozenset(
+    {
+        "gpt2",
+        "gpt_neox",
+        "granite",
+        "llama",
+        "mistral",
+        "phi",
+        "phi3",
+    }
+)
+
+
+def parse_lora_target_modules(raw: str | None) -> list[str] | None:
+    if raw is None or not str(raw).strip():
+        return None
+    modules = [part.strip() for part in str(raw).split(",") if part.strip()]
+    if not modules:
+        raise ValueError("lora-target-modules must list at least one module name")
+    return modules
+
+
+def lora_is_enabled(args: argparse.Namespace) -> bool:
+    return int(getattr(args, "lora_rank", 0) or 0) > 0
+
+
+def validate_lora_args(args: argparse.Namespace) -> None:
+    if int(getattr(args, "lora_rank", 0) or 0) < 0:
+        raise ValueError("lora-rank cannot be negative")
+    if not lora_is_enabled(args):
+        return
+    if int(getattr(args, "lora_alpha", 16)) < 1:
+        raise ValueError("lora-alpha must be positive")
+    if not 0 <= float(getattr(args, "lora_dropout", 0.05)) < 1:
+        raise ValueError("lora-dropout must be in [0, 1)")
+    parse_lora_target_modules(getattr(args, "lora_target_modules", None))
+
+
+def resolve_torch_dtype(torch_module: Any, precision: str) -> Any | None:
+    if precision == "bf16":
+        return torch_module.bfloat16
+    if precision == "fp16":
+        return torch_module.float16
+    return None
+
+
+def ensure_tokenizer_padding(tokenizer: Any, model_config: Any) -> dict[str, Any]:
+    created_pad_token = False
+    if getattr(tokenizer, "pad_token", None) is None:
+        if getattr(tokenizer, "eos_token", None) is None:
+            raise ValueError("decoder tokenizers require a pad token or eos token")
+        tokenizer.pad_token = tokenizer.eos_token
+        if (
+            getattr(tokenizer, "pad_token_id", None) is None
+            and getattr(tokenizer, "eos_token_id", None) is not None
+        ):
+            tokenizer.pad_token_id = tokenizer.eos_token_id
+        created_pad_token = True
+    pad_token_id = getattr(tokenizer, "pad_token_id", None)
+    if pad_token_id is not None:
+        model_config.pad_token_id = pad_token_id
+    model_type = str(getattr(model_config, "model_type", "") or "").lower()
+    if model_type in DECODER_MODEL_TYPES:
+        tokenizer.padding_side = "left"
+    return {
+        "created_pad_token": created_pad_token,
+        "padding_side": getattr(tokenizer, "padding_side", None),
+        "pad_token_id": pad_token_id,
+        "model_type": model_type or None,
+    }
+
+
+def build_lora_config(args: argparse.Namespace) -> Any:
+    peft = importlib.import_module("peft")
+
+    if not lora_is_enabled(args):
+        raise ValueError("LoRA is not enabled")
+    alpha = int(getattr(args, "lora_alpha", 16))
+    dropout = float(getattr(args, "lora_dropout", 0.05))
+    if alpha < 1:
+        raise ValueError("lora-alpha must be positive")
+    if not 0 <= dropout < 1:
+        raise ValueError("lora-dropout must be in [0, 1)")
+    kwargs: dict[str, Any] = {
+        "task_type": peft.TaskType.SEQ_CLS,
+        "r": int(args.lora_rank),
+        "lora_alpha": alpha,
+        "lora_dropout": dropout,
+        "bias": "none",
+        "modules_to_save": ["classifier", "score"],
+    }
+    target_modules = parse_lora_target_modules(getattr(args, "lora_target_modules", None))
+    if target_modules:
+        kwargs["target_modules"] = target_modules
+    return peft.LoraConfig(**kwargs)
+
+
+def parameter_counts(model: Any) -> dict[str, float | int]:
+    trainable = sum(
+        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+    )
+    total = sum(parameter.numel() for parameter in model.parameters())
+    return {
+        "trainable": int(trainable),
+        "total": int(total),
+        "trainable_ratio": (trainable / total) if total else 0.0,
+    }
+
+
+def apply_lora(model: Any, args: argparse.Namespace) -> Any:
+    peft = importlib.import_module("peft")
+
+    adapted = peft.get_peft_model(model, build_lora_config(args))
+    args.lora_parameter_counts = parameter_counts(adapted)
+    return adapted
+
+
+def save_trained_model(trainer: Any, tokenizer: Any, args: argparse.Namespace) -> None:
+    model_dir = str(args.model_dir)
+    model = trainer.model
+    if lora_is_enabled(args) and hasattr(model, "merge_and_unload"):
+        merged = model.merge_and_unload()
+        # A single standard safetensors file keeps compatibility with the
+        # fail-closed matrix verifier and the existing inference loader.
+        merged.save_pretrained(model_dir, safe_serialization=True, max_shard_size="20GB")
+    else:
+        trainer.save_model(model_dir)
+    tokenizer.save_pretrained(model_dir)
 
 
 def configure_determinism(
@@ -310,6 +516,10 @@ def package_artifacts(
 ) -> None:
     model_dir.mkdir(parents=True, exist_ok=True)
     label_to_id = {label: index for index, label in enumerate(labels)}
+    is_llama_derivative = (
+        str(getattr(args, "base_model_license", "") or "").casefold().startswith("llama")
+    )
+    model_id_prefix = "Llama-3.1-CUAD" if is_llama_derivative else "legal-encoder-cuad"
     mapping = {
         "schema_version": "1.0",
         "label2id": label_to_id,
@@ -345,7 +555,7 @@ def package_artifacts(
         "schema_version": "1.0",
         "base_model": args.model_name,
         "base_model_provenance": base_model,
-        "model_id": "legal-encoder-prototype",
+        "model_id": f"{model_id_prefix}-prototype",
         "problem_type": args.problem_type,
         "source_dataset": "CUAD v1",
         "source_license": "CC BY 4.0",
@@ -364,10 +574,13 @@ def package_artifacts(
             "gradient_accumulation_steps": getattr(args, "gradient_accumulation_steps", 1),
             "warmup_ratio": getattr(args, "warmup_ratio", 0.0),
             "weight_decay": getattr(args, "weight_decay", 0.0),
+            "metric_for_best_model": getattr(args, "metric_for_best_model", None)
+            or ("micro_f1" if args.problem_type == "multi_label" else "accuracy"),
             "evaluation_strategy": getattr(args, "evaluation_strategy", "epoch"),
             "early_stopping_patience": getattr(args, "early_stopping_patience", 0),
             "gradient_checkpointing": getattr(args, "gradient_checkpointing", False),
             "precision": getattr(args, "resolved_precision", getattr(args, "precision", "auto")),
+            "lora": getattr(args, "lora_metadata", None),
         },
         "matrix_run": {
             "candidate": getattr(args, "candidate_name", None),
@@ -402,7 +615,7 @@ def package_artifacts(
             if (training_dir / f"{name}.jsonl").is_file()
         }
         provenance["split_sha256"] = hashes
-        provenance["model_id"] = f"legal-encoder-cuad-{hashes.get('train', 'unknown')[:12]}"
+        provenance["model_id"] = f"{model_id_prefix}-{hashes.get('train', 'unknown')[:12]}"
         preparation_path = training_dir / "preparation.json"
         if preparation_path.is_file():
             provenance["preparation_sha256"] = file_sha256(preparation_path)
@@ -410,7 +623,7 @@ def package_artifacts(
     weights_path = model_dir / "model.safetensors"
     if weights_path.is_file():
         provenance["weights_sha256"] = file_sha256(weights_path)
-        provenance["model_id"] = f"legal-encoder-cuad-{provenance['weights_sha256'][:12]}"
+        provenance["model_id"] = f"{model_id_prefix}-{provenance['weights_sha256'][:12]}"
     provenance["base_revision"] = exact_revision
     provenance["requested_revision"] = requested_revision
     (model_dir / "label_mapping.json").write_text(
@@ -434,6 +647,8 @@ def package_artifacts(
     shutil.copyfile(
         MODULE_DIR / "PRETRAINED_ATTRIBUTION.md", model_dir / "PRETRAINED_ATTRIBUTION.md"
     )
+    if is_llama_derivative:
+        shutil.copyfile(MODULE_DIR / LLAMA_NOTICE_FILE, model_dir / "NOTICE")
     code_dir = model_dir / "code"
     code_dir.mkdir(exist_ok=True)
     for filename in ("inference.py", "heuristic.py", "windowing.py"):
@@ -444,6 +659,7 @@ def package_artifacts(
         EVALUATION_METRICS_FILE,
         "label_mapping.json",
         "model.safetensors",
+        "NOTICE",
         "tokenizer.json",
         "tokenizer_config.json",
         WINDOW_CONFIG_FILE,
@@ -454,9 +670,7 @@ def package_artifacts(
         if not path.is_file():
             continue
         artifact_hashes[name] = (
-            provenance["weights_sha256"]
-            if name == "model.safetensors"
-            else file_sha256(path)
+            provenance["weights_sha256"] if name == "model.safetensors" else file_sha256(path)
         )
     provenance["artifact_sha256"] = artifact_hashes
     (model_dir / "training_provenance.json").write_text(
@@ -469,6 +683,7 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.batch_size < 1:
         raise ValueError("batch-size must be positive")
+    validate_lora_args(args)
     if args.max_steps == 0 or args.max_steps < -1:
         raise ValueError("max-steps must be -1 or a positive integer")
     if args.deterministic:
@@ -562,12 +777,15 @@ def main() -> None:
             precision = tp / (tp + fp) if tp + fp else 0.0
             recall = tp / (tp + fn) if tp + fn else 0.0
             f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+            f2 = 5 * precision * recall / (4 * precision + recall) if precision + recall else 0.0
             exact = float(np.all(predictions == references, axis=1).mean())
             return {
                 "micro_precision": precision,
                 "micro_recall": recall,
                 "micro_f1": f1,
+                "micro_f2": f2,
                 "exact_match": exact,
+                **tuned_micro_f1(logits, references),
             }
         predictions = np.argmax(logits, axis=-1)
         return {"accuracy": float((predictions == references).mean())}
@@ -591,15 +809,38 @@ def main() -> None:
     model_config.id2label = {index: label for label, index in label_to_id.items()}
     model_config.label2id = label_to_id
     model_config.problem_type = problem_type
+    args.tokenizer_padding = ensure_tokenizer_padding(tokenizer, model_config)
+    pretrained_kwargs: dict[str, Any] = {
+        "revision": args.revision,
+        "config": model_config,
+    }
+    torch_dtype = (
+        resolve_torch_dtype(torch, args.resolved_precision) if lora_is_enabled(args) else None
+    )
+    if torch_dtype is not None:
+        pretrained_kwargs["torch_dtype"] = torch_dtype
     model = AutoModelForSequenceClassification.from_pretrained(
         args.model_name,
-        revision=args.revision,
-        config=model_config,
+        **pretrained_kwargs,
     )
-    args.resolved_revision = (
-        getattr(model.config, "_commit_hash", None)
-        or getattr(tokenizer, "init_kwargs", {}).get("_commit_hash")
-    )
+    args.lora_metadata = None
+    if lora_is_enabled(args):
+        model = apply_lora(model, args)
+        args.lora_metadata = {
+            "enabled": True,
+            "rank": args.lora_rank,
+            "alpha": args.lora_alpha,
+            "dropout": args.lora_dropout,
+            "target_modules": parse_lora_target_modules(args.lora_target_modules),
+            "modules_to_save": ["classifier", "score"],
+            "merged_for_inference": True,
+            "parameter_counts": getattr(args, "lora_parameter_counts", None),
+            "tokenizer_padding": args.tokenizer_padding,
+            "torch_dtype": str(torch_dtype) if torch_dtype is not None else None,
+        }
+    args.resolved_revision = getattr(model.config, "_commit_hash", None) or getattr(
+        tokenizer, "init_kwargs", {}
+    ).get("_commit_hash")
     if (
         args.revision
         and re.fullmatch(r"[0-9a-fA-F]{40}", args.revision)
@@ -706,8 +947,7 @@ def main() -> None:
     )
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     metrics = trainer.evaluate()
-    trainer.save_model(str(args.model_dir))
-    tokenizer.save_pretrained(str(args.model_dir))
+    save_trained_model(trainer, tokenizer, args)
     package_artifacts(args.model_dir, labels, args, metrics, window_config)
     summary = {
         "state": "complete",

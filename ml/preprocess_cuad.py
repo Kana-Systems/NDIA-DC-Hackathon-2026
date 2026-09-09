@@ -80,6 +80,27 @@ def _answer_spans(paragraph: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(spans, key=lambda span: (span["start"], span["end"], span["label"]))
 
 
+def labels_for_bounds(
+    spans: list[dict[str, Any]],
+    start: int,
+    end: int,
+    minimum_overlap_fraction: float = 0.5,
+) -> list[str]:
+    """Apply one labeling rule to training and production-style evaluation windows."""
+
+    if not 0 < minimum_overlap_fraction <= 1:
+        raise ValueError("minimum_overlap_fraction must be in (0, 1]")
+    if start < 0 or end <= start:
+        raise ValueError("window bounds must satisfy 0 <= start < end")
+    labels = {
+        str(span["label"])
+        for span in spans
+        if max(0, min(end, int(span["end"])) - max(start, int(span["start"])))
+        >= minimum_overlap_fraction * min(int(span["end"]) - int(span["start"]), end - start)
+    }
+    return sorted(labels)
+
+
 def _paragraph_windows(
     document_id: str,
     paragraph_number: int,
@@ -109,14 +130,7 @@ def _paragraph_windows(
                 )
             ]
         for bounds in span_windows:
-            labels = sorted(
-                {
-                    candidate["label"]
-                    for candidate in spans
-                    if (bounds[0] <= candidate["start"] and candidate["end"] <= bounds[1])
-                    or (candidate["start"] <= bounds[0] and bounds[1] <= candidate["end"])
-                }
-            )
+            labels = labels_for_bounds(spans, bounds[0], bounds[1])
             positive_by_bounds[bounds] = {
                 "start_char": bounds[0],
                 "end_char": bounds[1],
