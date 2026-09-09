@@ -140,6 +140,7 @@ def test_deployment_fetches_lfs_and_enables_model_review() -> None:
 def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     terraform = (ROOT / "infra/terraform/main.tf").read_text(encoding="utf-8")
     endpoint = (ROOT / "infra/terraform/sagemaker-inference.tf").read_text(encoding="utf-8")
+    variables = (ROOT / "infra/terraform/variables.tf").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
     image = (ROOT / "Dockerfile.sagemaker").read_text(encoding="utf-8")
     thresholds = json.loads(
@@ -164,6 +165,8 @@ def test_llama_classifier_canary_keeps_packaged_rollback() -> None:
     assert "enable_network_isolation = true" in endpoint
     assert "instance_type" in endpoint
     assert "var.classifier_endpoint_instance_type" in endpoint
+    assert 'default     = "ml.g6e.2xlarge"' in variables
+    assert 'var.classifier_endpoint_instance_type == "ml.g6e.2xlarge"' in variables
     assert "volume_size_in_gb" not in endpoint
     assert "kms_key_arn" not in endpoint
     assert "NVMe device is encrypted in hardware" in endpoint

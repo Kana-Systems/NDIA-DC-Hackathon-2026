@@ -264,11 +264,11 @@ variable "classifier_inference_image_uri" {
 variable "classifier_endpoint_instance_type" {
   description = "Single-GPU endpoint type for the Llama ensemble."
   type        = string
-  default     = "ml.g6e.xlarge"
+  default     = "ml.g6e.2xlarge"
 
   validation {
-    condition     = var.classifier_endpoint_instance_type == "ml.g6e.xlarge"
-    error_message = "The reviewed ensemble deployment is pinned to ml.g6e.xlarge."
+    condition     = var.classifier_endpoint_instance_type == "ml.g6e.2xlarge"
+    error_message = "The reviewed ensemble deployment is pinned to ml.g6e.2xlarge."
   }
 }
 

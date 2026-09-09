@@ -434,7 +434,7 @@ The optional Llama deployment uses the hash-verified three-seed
 document-disjoint selection result was 78.55% micro-F1, 83.22% precision, and
 74.38% recall; it did not meet the 80% recall promotion floor. Supplying the
 SHA-256-addressed `CLASSIFIER_MODEL_DATA_URL` deployment secret makes Terraform
-create one network-isolated `ml.g6e.xlarge` SageMaker endpoint and makes ECS call
+create one network-isolated `ml.g6e.2xlarge` SageMaker endpoint and makes ECS call
 it through least-privilege IAM. The deployment builds a private, digest-pinned
 inference image. The artifact remains KMS-encrypted in S3; G6e's fixed local
 NVMe storage is hardware-encrypted with per-instance keys. The endpoint returns
