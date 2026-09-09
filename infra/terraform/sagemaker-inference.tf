@@ -19,8 +19,8 @@ check "classifier_endpoint_source" {
   }
 }
 
-# Bootstrap grants ECS PassRole access. The optional classifier needs its own
-# exact execution-role grant, restricted to SageMaker rather than all services.
+# Keep the optional classifier's complete deployment boundary together: passing
+# its execution role, managing versioned runtime resources, tags, and smoke tests.
 resource "aws_iam_role_policy" "classifier_deploy" {
   count = local.classifier_endpoint_enabled && var.github_deploy_role_name != "" ? 1 : 0
 
@@ -36,6 +36,21 @@ resource "aws_iam_role_policy" "classifier_deploy" {
       Condition = {
         StringEquals = { "iam:PassedToService" = "sagemaker.amazonaws.com" }
       }
+      }, {
+      Sid    = "ManageClassifierRuntime"
+      Effect = "Allow"
+      Action = [
+        "sagemaker:CreateModel", "sagemaker:DescribeModel", "sagemaker:DeleteModel",
+        "sagemaker:CreateEndpointConfig", "sagemaker:DescribeEndpointConfig", "sagemaker:DeleteEndpointConfig",
+        "sagemaker:CreateEndpoint", "sagemaker:DescribeEndpoint", "sagemaker:UpdateEndpoint", "sagemaker:DeleteEndpoint",
+        "sagemaker:AddTags", "sagemaker:ListTags", "sagemaker:DeleteTags",
+        "sagemaker:InvokeEndpoint",
+      ]
+      Resource = [
+        "arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:model/${local.managed_classifier_endpoint_name}-*",
+        "arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint-config/${local.managed_classifier_endpoint_name}-*",
+        "arn:${data.aws_partition.current.partition}:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint/${local.managed_classifier_endpoint_name}",
+      ]
     }]
   })
 }

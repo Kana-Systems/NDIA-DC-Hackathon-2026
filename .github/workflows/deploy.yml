@@ -364,6 +364,20 @@ jobs:
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "TF_VAR_classifier_inference_image_uri=${REPOSITORY_URL}@${digest}" >> "$GITHUB_ENV"
 
+      - name: Prepare SageMaker-compatible runtime manifest
+        if: env.TF_VAR_classifier_model_data_url != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_tag="classifier-$(sha256sum Dockerfile.sagemaker | cut -d ' ' -f 1)-docker-v2"
+          digest="$(python scripts/prepare-sagemaker-image.py \
+            --region "$AWS_REGION" \
+            --repository-name "${REPOSITORY_URL##*/}" \
+            --source-digest "${TF_VAR_classifier_inference_image_uri##*@}" \
+            --runtime-tag "$runtime_tag")"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "TF_VAR_classifier_inference_image_uri=${REPOSITORY_URL}@${digest}" >> "$GITHUB_ENV"
+
       - name: Terraform plan
         working-directory: infra/terraform
         shell: bash

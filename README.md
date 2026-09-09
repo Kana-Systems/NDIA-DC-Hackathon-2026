@@ -621,6 +621,15 @@ introduced. Terraform separately grants the GitHub deployment role
 `iam:PassRole` for the exact classifier execution role, with
 `iam:PassedToService` restricted to `sagemaker.amazonaws.com`, before model
 creation. CI derives `github_deploy_role_name` from its configured OIDC role ARN.
+The same policy grants model/configuration/endpoint lifecycle and tagging
+operations for this classifier's resource names, plus invocation of its endpoint
+for the smoke check. It grants no training-job access or account-wide SageMaker
+administration.
+Before model creation, `scripts/prepare-sagemaker-image.py` selects the
+Linux/amd64 runtime from the build's OCI index and publishes a Docker V2
+manifest accepted by SageMaker. It verifies manifest hashes and retains the
+exact config and gzip layer digests, without pulling or rebuilding the image.
+The original OCI build, SBOM, and provenance remain in ECR.
 
 For a local infrastructure review:
 

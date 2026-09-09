@@ -61,6 +61,26 @@ def test_classifier_reuse_tracks_all_build_inputs_and_passrole_is_scoped() -> No
     assert 'Action   = "iam:PassRole"' in grant
     assert "Resource = aws_iam_role.sagemaker_training.arn" in grant
     assert '"iam:PassedToService" = "sagemaker.amazonaws.com"' in grant
+    for action in (
+        "CreateModel",
+        "DescribeModel",
+        "DeleteModel",
+        "CreateEndpointConfig",
+        "DescribeEndpointConfig",
+        "DeleteEndpointConfig",
+        "CreateEndpoint",
+        "DescribeEndpoint",
+        "UpdateEndpoint",
+        "DeleteEndpoint",
+        "AddTags",
+        "ListTags",
+        "DeleteTags",
+        "InvokeEndpoint",
+    ):
+        assert f'"sagemaker:{action}"' in grant
+    assert '"sagemaker:*"' not in grant
+    for resource in ("model", "endpoint-config", "endpoint"):
+        assert f":{resource}/${{local.managed_classifier_endpoint_name}}" in grant
 
 
 def test_deployment_fetches_lfs_and_enables_model_review() -> None:
