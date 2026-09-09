@@ -27,6 +27,7 @@ import {
   RecordsPage,
 } from "./WorkspacePages";
 import "./workspace.css";
+import kanaLogo from "./assets/kana-systems-logo.png";
 type Page =
   | "contracts"
   | "research"
@@ -65,7 +66,8 @@ function Login({ onLogin }: { onLogin: () => void }) {
     <main className="lens-login">
       <section>
         <span className="wordmark">
-          <span className="lens-symbol">K</span>Kana Legal
+          <img className="kana-logo" src={kanaLogo} alt="Kana Systems" width="64" height="64" />
+          <span>Kana Legal</span>
         </span>
         <p className="overline">Contract intelligence, connected.</p>
         <h1>
@@ -238,14 +240,15 @@ export default function App() {
         <a
           href="#"
           className="wordmark"
+          aria-label="Kana Legal home"
           onClick={(e) => {
             e.preventDefault();
             setPage("contracts");
           }}
         >
-          <span className="lens-symbol">K</span>
+          <img className="kana-logo" src={kanaLogo} alt="Kana Systems" width="56" height="56" />
           <span>
-            Kana
+            Kana{" "}
             <br />
             <b>Legal</b>
           </span>

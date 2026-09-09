@@ -217,17 +217,14 @@ button.quiet {
 .wordmark b {
   font-weight: 800;
 }
-.lens-symbol {
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  color: var(--accent);
-  font-size: 25px;
-  width: 42px;
-  height: 46px;
-  border-radius: 12px;
-  background: linear-gradient(145deg, #15405a, #102a40);
-  font-weight: 600;
+.kana-logo {
+  display: block;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  /* The official transparent asset is black; this is its dark-surface treatment. */
+  filter: invert(1);
 }
 .sidebar .wordmark {
   margin: 0 14px 48px;
@@ -1024,9 +1021,9 @@ select:focus {
   transform: rotate(-25deg);
   pointer-events: none;
 }
-.lens-login .lens-symbol {
-  color: var(--heading);
-  border-color: #3396b7;
+.lens-login .kana-logo {
+  width: 64px;
+  height: 64px;
 }
 .notice:not(.error) {
   border: 1px solid #2d5b70;
