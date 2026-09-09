@@ -719,8 +719,9 @@ button.quiet {
   isolation: isolate;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 5% 20%, #16729a66, transparent 65%),
-    linear-gradient(160deg, #152c43, #0c1a2c 75%);
+    linear-gradient(110deg, #0c1a2ce6, #0c1a2ccc),
+    url("./assets/kana-wave.jpg") center / cover no-repeat,
+    #0c1a2c;
   color: var(--text);
   padding: 60px clamp(35px, 6vw, 100px);
   display: flex;
@@ -742,7 +743,7 @@ button.quiet {
   margin-bottom: 24px;
 }
 .lens-login > section > p:not(.overline) {
-  color: var(--muted);
+  color: var(--text);
   max-width: 420px;
 }
 .login-route {
@@ -1006,20 +1007,6 @@ select:focus {
 }
 .hero-accent {
   color: var(--accent);
-}
-.lens-login > section::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  width: 105%;
-  height: 72%;
-  bottom: -38%;
-  left: -30%;
-  border-radius: 50%;
-  border: 65px solid #32bce90b;
-  box-shadow: 0 0 0 50px #32bce907, 0 0 0 100px #32bce904;
-  transform: rotate(-25deg);
-  pointer-events: none;
 }
 .lens-login .kana-logo {
   width: 64px;

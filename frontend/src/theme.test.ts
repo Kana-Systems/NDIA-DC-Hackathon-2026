@@ -15,6 +15,23 @@ function contrast(a: string, b: string) {
 }
 
 describe('Kana Legal ocean theme', () => {
+  it('uses the bundled wave only in the login hero with a readable navy overlay', () => {
+    const hero = stylesheet.match(/\.lens-login > section \{([^}]+)\}/)![1]
+    expect(hero).toContain('url("./assets/kana-wave.jpg") center / cover no-repeat')
+    expect(hero).toContain('linear-gradient(110deg, #0c1a2ce6, #0c1a2ccc)')
+    expect(stylesheet.match(/kana-wave\.jpg/g)).toHaveLength(1)
+    // Worst case: pure white foam beneath the least opaque gradient stop.
+    const navy = '#0c1a2c'
+    const alpha = 0xcc / 255
+    const brightestBackground = '#' + [1, 3, 5].map(offset =>
+      Math.round(parseInt(navy.slice(offset, offset + 2), 16) * alpha + 255 * (1 - alpha))
+        .toString(16).padStart(2, '0')
+    ).join('')
+    for (const foreground of ['text', 'heading', 'accent', 'accent-soft']) {
+      expect(contrast(tokens.get(foreground)!, brightestBackground), foreground)
+        .toBeGreaterThanOrEqual(4.5)
+    }
+  })
   it('uses dark native controls and replaces the former green palette', () => {
     expect(stylesheet).toContain('color-scheme: dark')
     expect(tokens.get('bg')).toBe('#101929')
