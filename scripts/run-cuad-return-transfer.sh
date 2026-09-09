@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "usage: $0 <maud|contract-4k|contract-8k>" >&2
+if [[ $# -lt 1 || $# -gt 2 || (${2:-} != "" && ${2:-} != "--resume") ]]; then
+  echo "usage: $0 <maud|contract-4k|contract-8k> [--resume]" >&2
   exit 64
 fi
 
 mode="$1"
+resume="${2:-}"
+batch_size="${BATCH_SIZE:-32}"
+gradient_accumulation_steps="${GRADIENT_ACCUMULATION_STEPS:-1}"
+if [[ ! "$batch_size" =~ ^[1-9][0-9]*$ || ! "$gradient_accumulation_steps" =~ ^[1-9][0-9]*$ ]]; then
+  echo "BATCH_SIZE and GRADIENT_ACCUMULATION_STEPS must be positive integers" >&2
+  exit 64
+fi
 project="${PROJECT_ROOT:-/workspace/project-external-20260909}"
 venv="${VENV_ROOT:-/workspace/venv}"
 python="${venv}/bin/python"
@@ -59,7 +66,23 @@ if [[ -f "$summary_file" ]] &&
   echo "return-transfer run already complete: $run_id"
   exit 0
 fi
-if [[ -e "$model_dir" || -e "$checkpoint_dir" ]]; then
+resume_args=()
+if [[ "$resume" == "--resume" ]]; then
+  shopt -s nullglob
+  checkpoints=("${checkpoint_dir}"/checkpoint-*)
+  shopt -u nullglob
+  if [[ ${#checkpoints[@]} -eq 0 ]]; then
+    echo "no checkpoint is available to resume: $run_id" >&2
+    exit 1
+  fi
+  IFS=$'\n' read -r -d '' -a checkpoints < <(
+    printf '%s\n' "${checkpoints[@]}" | sort --version-sort
+    printf '\0'
+  )
+  resume_checkpoint="${checkpoints[-1]}"
+  resume_args=(--resume-from-checkpoint "$resume_checkpoint")
+  echo "resuming return-transfer run from $resume_checkpoint"
+elif [[ -e "$model_dir" || -e "$checkpoint_dir" ]]; then
   echo "refusing to replace partial return-transfer run: $run_id" >&2
   exit 1
 fi
@@ -126,13 +149,14 @@ export PYTHONPATH="$project"
     --checkpoint-dir "$checkpoint_dir" \
     --problem-type multi_label \
     --epochs 3 \
-    --batch-size 32 \
-    --gradient-accumulation-steps 1 \
+    --batch-size "$batch_size" \
+    --gradient-accumulation-steps "$gradient_accumulation_steps" \
     --learning-rate 5e-5 \
     --max-length 512 \
     --warmup-ratio 0.1 \
     --weight-decay 0.01 \
     --positive-weight-cap 3.0 \
+    "${resume_args[@]}" \
     --metric-for-best-model micro_f1_tuned \
     --evaluation-strategy epoch \
     --early-stopping-patience 1 \
@@ -162,4 +186,4 @@ export PYTHONPATH="$project"
     --model-id-prefix Llama-3.1-CUAD-transfer \
     --heartbeat-file "$status_file" \
     --telemetry-file "$telemetry_file"
-} 2>&1 | tee "$log_file"
+} 2>&1 | tee -a "$log_file"
