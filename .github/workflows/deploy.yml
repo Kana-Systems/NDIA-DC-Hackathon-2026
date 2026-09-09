@@ -184,10 +184,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          [[ "$account" =~ ^[0-9]{12}$ ]]
+          rendered_policy="${RUNNER_TEMP}/security-perimeter-deploy.json"
+          jq --arg account "$account" '
+            walk(
+              if type == "string"
+              then split("${aws:PrincipalAccount}") | join($account)
+              else .
+              end
+            )
+          ' scripts/iam/security-perimeter-deploy.json >"$rendered_policy"
+          jq -e --arg account "$account" '
+            all(.. | strings; contains("${aws:PrincipalAccount}") | not)
+            and any(.. | strings; contains($account))
+          ' "$rendered_policy" >/dev/null
           aws iam put-role-policy \
             --role-name "${AWS_GOV_ROLE_ARN##*/}" \
             --policy-name security-perimeter-deploy \
-            --policy-document file://scripts/iam/security-perimeter-deploy.json
+            --policy-document "file://${rendered_policy}"
 
       - name: Ensure classifier base image pull access
         if: env.TF_VAR_classifier_model_data_url != ''

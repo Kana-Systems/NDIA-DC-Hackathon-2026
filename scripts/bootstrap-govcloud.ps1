@@ -334,7 +334,20 @@ try {
         '--policy-name', 'classifier-base-image-pull',
         '--policy-document', "file://$ClassifierPullPolicyPath"
     )
-    $SecurityPerimeterPolicyPath = Join-Path $PSScriptRoot 'iam/security-perimeter-deploy.json'
+    $SecurityPerimeterPolicyTemplate = Join-Path $PSScriptRoot 'iam/security-perimeter-deploy.json'
+    $SecurityPerimeterPolicy = Get-Content -Path $SecurityPerimeterPolicyTemplate -Raw
+    if (-not $SecurityPerimeterPolicy.Contains('${aws:PrincipalAccount}')) {
+        throw 'Security perimeter policy is missing its account placeholder.'
+    }
+    $SecurityPerimeterPolicy = $SecurityPerimeterPolicy.Replace(
+        '${aws:PrincipalAccount}',
+        $AccountId
+    )
+    if ($SecurityPerimeterPolicy.Contains('${aws:PrincipalAccount}')) {
+        throw 'Security perimeter policy account placeholder was not fully rendered.'
+    }
+    $SecurityPerimeterPolicyPath = Join-Path $TempRoot 'security-perimeter-deploy.json'
+    Set-Content -Path $SecurityPerimeterPolicyPath -Value $SecurityPerimeterPolicy -Encoding utf8
     Invoke-Aws @(
         'iam', 'put-role-policy',
         '--role-name', $RoleName,
