@@ -9,6 +9,17 @@ variable "aws_region" {
   }
 }
 
+variable "github_deploy_role_name" {
+  description = "Existing GitHub OIDC role to grant scoped classifier PassRole access. Empty for local validation."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.github_deploy_role_name == "" || can(regex("^[A-Za-z0-9+=,.@_-]{1,64}$", var.github_deploy_role_name))
+    error_message = "github_deploy_role_name must be an IAM role name, not an ARN."
+  }
+}
+
 variable "project_name" {
   description = "Short lowercase name used in resource names."
   type        = string

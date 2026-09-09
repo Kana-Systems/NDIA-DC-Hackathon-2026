@@ -1,6 +1,27 @@
 # Kana Legal
 
-## Connected contract intelligence application
+Kana Legal helps acquisition reviewers and mission analysts turn contract and
+reference documents into cited findings, research drafts, and human-reviewed
+records. The React **Lens** workspace connects document ingestion, trained
+clause classification, source retrieval, and review decisions in one application.
+
+| Use case | Workflow | Result |
+| --- | --- | --- |
+| Government contract review | Upload or paste a contract, add acquisition context, triage findings, inspect evidence | Prioritized findings and an attributable review decision |
+| Grounded mission research | Ask a question against available sources and inspect statement citations | A cited answer, summary, or decision-memo draft for human review |
+| Foundational data ingestion | Import documents or sync an approved connection, track source changes, review entities | Versioned source records and approved JSON handoffs |
+
+This is an independent hackathon prototype for public or synthetic documents.
+Reviewers remain responsible for decisions. Connector readiness and production
+limits are described in [LENS_WORKSPACE.md](LENS_WORKSPACE.md).
+
+**Start here:** [Setup and troubleshooting](docs/SETUP.md) ·
+[Six-minute demo and rubric coverage](docs/JUDGING_REVIEW.md) ·
+[Contributor guide](CONTRIBUTING.md) ·
+[Export integration](docs/INTEROPERABILITY.md) ·
+[Architecture](#architecture) · [GovCloud deployment](#govcloud-deployment)
+
+## Quick start
 
 The integrated application combines the React judge interface with this
 repository's parsing, identity, ingestion, and model infrastructure.
@@ -22,7 +43,7 @@ git clone https://github.com/Kana-Systems/NDIA-DC-Hackathon-2026.git
 cd NDIA-DC-Hackathon-2026
 git lfs pull
 bash scripts/setup-local.sh
-bash scripts/run-local.sh
+MODEL_REVIEW_ENABLED=false BEDROCK_ENABLED=false bash scripts/run-local.sh
 ```
 
 Install [Git LFS](https://git-lfs.com), Python 3.12, and Node.js 22.12+ first.
@@ -43,7 +64,10 @@ documents require splitting. Upload parsing also enforces archive, page, and siz
 limits. On macOS the Linux address-space limit is unavailable; subprocess timeout
 and explicit document bounds remain active.
 
-The run script enables live **GPT-5.6 Terra through AWS Bedrock** by default and
+The quick start explicitly selects the offline workflow, which needs no AWS
+credentials. To use live review after configuring GovCloud access, run
+`bash scripts/run-local.sh`. The run script enables live
+**GPT-5.6 Terra through AWS Bedrock** by default and
 uses the existing AWS credential chain. Inference is billable and sends supplied
 document text and retrieved evidence to Bedrock. Use public or synthetic documents
 for this prototype. To explicitly run the legacy offline engine, set both
@@ -80,9 +104,8 @@ qualified reviewer, not legal advice or an authority for FAR/DFARS applicability
 This is an independent hackathon prototype. References to challenge sponsors,
 government organizations, products, or regulations identify the problem context
 and do not imply endorsement, authorization, certification, or official status.
-Repository owners should complete the
-[public release checklist](RELEASE_CHECKLIST.md) before publication or
-deployment.
+See the [security and data limitations](#security-and-data-limitations) and
+[security policy](SECURITY.md) for the prototype's operating boundaries.
 
 ## Architecture
 
@@ -91,13 +114,16 @@ flowchart LR
   Judge[Judge browser] -->|HTTPS| ALB[Application Load Balancer]
   ALB --> ECS[ECS Fargate\nFastAPI + React Lens]
   ECS --> S3[(Encrypted S3\nuploads + artifacts)]
+  ECS --> DDB[(DynamoDB\nworkspace records + versions)]
   ECS --> OS[(Private OpenSearch\nBM25 + vectors)]
   ECS --> BR[Bedrock\nGPT-5.6 Terra]
+  ECS --> CLS[SageMaker classifier\nwhen managed endpoint enabled]
   SM[Secrets Manager\njudge credentials] --> ECS
   CW[CloudWatch logs/alarms] --- ECS
   GHA[GitHub Actions OIDC] --> ECR[ECR]
   GHA --> TF[Terraform]
   ECR --> ECS
+  ECR --> CLS
 ```
 
 Terraform deploys into `us-gov-west-1` in the `aws-us-gov` partition:
@@ -135,9 +161,9 @@ resource descriptions, log stream names, or other resource metadata.
 Contract review remains the primary workflow. The same retrieval, authorization,
 provenance, and citation boundary also supports two reusable mission workflows:
 
-- **Retrieval-Augmented Generation Intelligence Service** — authenticated
+- **Retrieval-Augmented Generation Intelligence Service** - authenticated
   question answering, summaries, and analyst-review drafts over approved sources.
-- **Automated Foundational Data Ingestion** — versioned connector ingestion,
+- **Automated Foundational Data Ingestion** - versioned connector ingestion,
   deterministic chunking, entity resolution, relationship mapping, change
   detection, provenance, and quality-control status.
 
@@ -224,21 +250,17 @@ Embeddings V2 remains on `bedrock-runtime` and separately receives only
 
 ## Local run
 
-Create an isolated environment and install the project dependencies once the
-application requirements are present:
+The [setup guide](docs/SETUP.md) is the supported path, including prerequisites,
+offline/live modes, a working smoke check, updates, and troubleshooting. For a
+manual offline launch after setup:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate                 # Windows PowerShell: .venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-npm --prefix frontend ci
-npm --prefix frontend run build
-# Optionally copy .env.example to .env and replace every placeholder.
 export WORKSPACE_USERNAME=judge
 export WORKSPACE_PASSWORD='replace-with-a-local-secret'
 export DEMO_JWT_SECRET='replace-with-a-separate-random-signing-secret'
 export BEDROCK_ENABLED=false
-uvicorn app.main:app --host 127.0.0.1 --port 8080
+export MODEL_REVIEW_ENABLED=false
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
 Open `http://127.0.0.1:8080/lens/`; `GET /health` is unauthenticated for health
@@ -550,22 +572,24 @@ secrets are exposed to the deployment job; pull-request test jobs cannot access
 them. Protect changes to `.github/workflows/` and `infra/` with branch review.
 
 On every push to `main`, `.github/workflows/deploy.yml` runs tests without AWS
-credentials, then waits for `govcloud-demo` environment approval. Only the
+credentials, then enters the `govcloud-demo` environment gate (approval applies
+when configured in GitHub). Only the
 single environment-bound deploy job can request an OIDC token or assume the
-Terraform role. After approval it:
+Terraform role. The pipeline:
 
 1. installs the bounded application/dev dependency files, runs Python
    lint/tests and the deterministic J2 intelligence benchmark, checks the
    environment, and validates Terraform;
 2. authenticates to GovCloud with GitHub OIDC;
-3. creates the Terraform-managed ECR repository on the first run;
+3. verifies the pinned classifier artifact and its base-image pull access when
+   the managed endpoint is enabled, then ensures the ECR repository exists;
 4. builds an amd64 image with SBOM/provenance and pushes it to immutable ECR
    under `COMMIT_SHA-RUN_ID-RUN_ATTEMPT`, so reruns never collide;
-5. resolves the digest, runs a Terraform plan, and applies that exact image;
-6. runs the exact-digest one-shot Fargate task in the private application
-   network to seed sample OpenSearch knowledge and verifies its container exit;
-7. runs a second exact-digest task that durably ingests and verifies at least 120
-   synthetic documents in the J2 data plane;
+5. builds the private classifier image when enabled, resolves immutable image
+   digests, runs a Terraform plan, and applies it;
+6. verifies the managed classifier endpoint with a synthetic inference request;
+7. leaves sample knowledge and synthetic J2 ingestion disabled; these fixtures
+   are used in local tests and benchmarks;
 8. forces ECS deployment, waits for service stability, and verifies that every
    registered ALB target is healthy. Public HTTPS is verified after the
    Squarespace application CNAME is created.
@@ -585,6 +609,15 @@ Hugging Face repository used by `Dockerfile.sagemaker`. The job checks access
 to the pinned digest before building, allowing up to one minute for IAM
 propagation. The existing project-role IAM permission covers this policy
 update; no registry write access is granted.
+
+The classifier runtime is reused by an immutable ECR tag derived from
+`Dockerfile.sagemaker`, so UI/documentation updates do not rebuild its large
+base image. Changing the Dockerfile builds a new runtime. The deployment
+contract test requires updating the cache design if build-context inputs are
+introduced. Terraform separately grants the GitHub deployment role
+`iam:PassRole` for the exact classifier execution role, with
+`iam:PassedToService` restricted to `sagemaker.amazonaws.com`, before model
+creation. CI derives `github_deploy_role_name` from its configured OIDC role ARN.
 
 For a local infrastructure review:
 

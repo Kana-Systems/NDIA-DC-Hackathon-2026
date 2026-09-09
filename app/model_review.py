@@ -331,7 +331,7 @@ class ModelReviewService:
                     severity=item.severity if grounded else Severity.INFO,
                     description=item.description
                     if grounded
-                    else f"UNVERIFIED — {item.description}",
+                    else f"UNVERIFIED - {item.description}",
                     recommendation=item.recommendation,
                     citation_ids=citations,
                     locations=[context.location for context in contexts],

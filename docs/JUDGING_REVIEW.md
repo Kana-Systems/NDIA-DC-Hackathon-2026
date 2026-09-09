@@ -1,4 +1,4 @@
-# Hackathon review — September 9, 2026
+# Hackathon review - September 9, 2026
 
 Starting point: `bbc5da0`, the 9:41 AM update on `origin/main`. Improvements are
 on `improve/judging-workflows` in the main hackathon checkout. The morning model

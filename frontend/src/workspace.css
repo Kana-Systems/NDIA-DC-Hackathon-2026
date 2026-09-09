@@ -21,8 +21,6 @@
   --surface-raised: #1b2e43;
   --input: #0d1728;
   --sidebar: #19394e;
-  --topbar: #203c52;
-  --topbar-border: #41627a;
   --sidebar-border: #3c6078;
   --sidebar-hover: #20455c;
   --sidebar-active: #20526b;
@@ -391,22 +389,8 @@ button.quiet {
 .sharepoint-check button { min-height: 44px; margin-bottom: 16px; }
 .sharepoint-check > :last-child { margin-bottom: 0; }
 .connections-layout input, .connections-layout select { min-width: 0; }
-.workspace-topbar {
-  height: 70px;
-  border-bottom: 1px solid var(--topbar-border);
-  padding: 0 42px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--topbar);
-  font-size: 12px;
-  color: var(--label);
-}
-.workspace-topbar > span {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+
+
 .workspace-body main {
   max-width: 1500px;
   margin: auto;
@@ -741,18 +725,6 @@ button.quiet {
 .history-row time {
   color: var(--muted);
 }
-.context-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  background: var(--surface-raised);
-  padding: 14px 18px;
-  border-radius: 7px;
-  margin: 18px 0;
-  font-size: 12px;
-  color: var(--accent-soft);
-}
 .inline-label {
   display: flex;
   flex-direction: row;
@@ -958,9 +930,7 @@ button.quiet {
   .workspace-body main {
     padding: 30px 24px;
   }
-  .workspace-topbar {
-    padding: 0 24px;
-  }
+
   .review-layout {
     grid-template-columns: 1fr;
   }
@@ -1016,14 +986,8 @@ button.quiet {
   .workspace-body {
     margin: 0;
   }
-  .workspace-topbar {
-    height: 46px;
-    font-size: 10px;
-    padding: 0 18px;
-  }
-  .workspace-topbar > .chip {
-    display: none;
-  }
+
+
   .workspace-body main {
     padding: 25px 18px;
   }
@@ -1182,3 +1146,10 @@ select:focus {
     transition: none;
   }
 }
+
+/* Long collections stay compact; the remainder scrolls within the list. */
+.compact-list { min-width: 0; }
+.compact-list-toggle { width: 100%; justify-content: center; margin: 12px 0; }
+.compact-list-overflow { max-height: min(32rem, 65vh); overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding: 4px; border: 1px solid var(--border); border-radius: 12px; }
+.compact-list-overflow[hidden] { display: none; }
+.connected-sources .compact-list > div:not(.compact-list-overflow), .connected-sources .compact-list-overflow > div { display: grid; gap: 20px; }

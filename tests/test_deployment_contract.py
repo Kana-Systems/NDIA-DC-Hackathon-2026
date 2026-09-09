@@ -45,6 +45,24 @@ def test_production_image_packages_verified_model_and_corpus() -> None:
     assert "python scripts/verify-shared-artifacts.py" in dockerfile
 
 
+def test_classifier_reuse_tracks_all_build_inputs_and_passrole_is_scoped() -> None:
+    image = (ROOT / "Dockerfile.sagemaker").read_text()
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+    terraform = (ROOT / "infra/terraform/sagemaker-inference.tf").read_text()
+    # A COPY/ADD/ARG or another stage requires expanding the build-cache key.
+    assert set(re.findall(r"^([A-Z]+) ", image, re.MULTILINE)) <= {"FROM", "RUN"}
+    assert image.count("FROM ") == 1
+    assert "sha256sum Dockerfile.sagemaker" in workflow
+    assert "ImageNotFoundException" in workflow
+    assert "-target=aws_iam_role_policy.classifier_deploy" in workflow
+    grant = terraform.split('resource "aws_iam_role_policy" "classifier_deploy"')[1].split(
+        'resource "aws_sagemaker_model"'
+    )[0]
+    assert 'Action   = "iam:PassRole"' in grant
+    assert "Resource = aws_iam_role.sagemaker_training.arn" in grant
+    assert '"iam:PassedToService" = "sagemaker.amazonaws.com"' in grant
+
+
 def test_deployment_fetches_lfs_and_enables_model_review() -> None:
     workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
     terraform = (ROOT / "infra/terraform/main.tf").read_text(encoding="utf-8")

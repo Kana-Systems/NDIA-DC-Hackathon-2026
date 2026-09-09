@@ -10,7 +10,7 @@ import type {
   Review,
   StructuredRecord,
 } from "./workspaceApi";
-import { Chip, Decision, Empty, ErrorNotice } from "./WorkspaceShared";
+import { Chip, CompactList, Decision, Empty, ErrorNotice } from "./WorkspaceShared";
 import { downloadJson, message, sourceStatus } from "./workspaceUtils";
 import { FindingList } from "./FindingList";
 
@@ -212,7 +212,7 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
               source here.
             </Empty>
           )}
-          {data?.connections.map((c) => (
+          <CompactList label="connections">{data?.connections.map((c) => (
             <article className="panel" key={c.id}>
               <div className="section-heading">
                 <h3>{c.name}</h3>
@@ -246,12 +246,12 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
                 </p>
               ))}
             </article>
-          ))}
+          ))}</CompactList>
         </section>
       </div>
       <section className="panel">
         <h2>Ingestion & change history</h2>
-        {events
+        <CompactList label="events">{events
           .filter(
             (e) =>
               e.action.startsWith("document.") ||
@@ -263,7 +263,7 @@ export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
               <small>{e.record_id.slice(0, 10)}</small>
               <time>{new Date(e.created_at).toLocaleString()}</time>
             </div>
-          ))}
+          ))}</CompactList>
       </section>
     </>
   );
@@ -377,7 +377,7 @@ export function LibraryPage({ onOpen }: { onOpen: (doc: Document) => void }) {
                 Search
               </button>
             </form>
-            {data?.evidence.map((e) => (
+            <CompactList key={query} label="passages">{data?.evidence.map((e) => (
               <blockquote key={e.evidence_id}>
                 <strong>{e.title}</strong>
                 <p>{e.excerpt}</p>
@@ -388,7 +388,7 @@ export function LibraryPage({ onOpen }: { onOpen: (doc: Document) => void }) {
                 )}
                 <small>Version {e.version}</small>
               </blockquote>
-            ))}
+            ))}</CompactList>
           </section>
           <section className="panel">
             <h2>Your indexed documents</h2>
@@ -398,7 +398,7 @@ export function LibraryPage({ onOpen }: { onOpen: (doc: Document) => void }) {
                 separate.
               </p>
             )}
-            {data?.documents.map((d) => (
+            <CompactList label="documents">{data?.documents.map((d) => (
               <button
                 className="contract-row"
                 key={d.id}
@@ -414,12 +414,12 @@ export function LibraryPage({ onOpen }: { onOpen: (doc: Document) => void }) {
                 </span>
                 <Chip>{sourceStatus(d)}</Chip>
               </button>
-            ))}
+            ))}</CompactList>
           </section>
         </>
       )}
       {tab === "catalog" && (
-        <div className="catalog-grid">
+        <CompactList className="catalog-grid" label="sources">
           {data?.catalog.map((s) => (
             <a
               className="panel catalog-item"
@@ -436,7 +436,7 @@ export function LibraryPage({ onOpen }: { onOpen: (doc: Document) => void }) {
               <Chip>Catalog reference</Chip>
             </a>
           ))}
-        </div>
+        </CompactList>
       )}
       {tab === "add" && (
         <form className="panel" onSubmit={add}>
@@ -631,7 +631,7 @@ export function EntitiesPage({ documents }: { documents: Document[] }) {
               return to draft for review.
             </Empty>
           )}
-          {items.map((item) => (
+          <CompactList label="entities">{items.map((item) => (
             <article className="panel" key={item.id}>
               <h2>{item.name}</h2>
               <Chip>{item.entity_type}</Chip>
@@ -648,7 +648,7 @@ export function EntitiesPage({ documents }: { documents: Document[] }) {
               ))}
               <Decision key={`${item.id}:${item.revision}`} item={item} onChange={() => void load()} />
             </article>
-          ))}
+          ))}</CompactList>
         </section>
       </div>
     </>
@@ -741,7 +741,7 @@ export function RecordsPage({ documents = [], onOpen }: { documents?: Document[]
       {all.length > 0 && !all.some(matches) && <Empty title="No records in this view">
         Choose All records or clear the search to inspect the rest of your decision history.
       </Empty>}
-      <div className="records-grid">
+      <CompactList key={`${filter}:${query}`} className="records-grid" label="records">
         {items.filter(matches).map((item) => (
           <article className="panel" key={item.id}>
             <Chip>Research record</Chip>
@@ -780,7 +780,7 @@ export function RecordsPage({ documents = [], onOpen }: { documents?: Document[]
             <Decision key={`${item.id}:${item.revision}`} item={item} onChange={() => void load()} />
           </article>
         ))}
-      </div>
+      </CompactList>
     </>
   );
 }

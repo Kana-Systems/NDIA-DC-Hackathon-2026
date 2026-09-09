@@ -142,7 +142,7 @@ export const apiClient = {
     } catch (error) {
       if (demoAuthorized) {
         return {
-          data: { title: 'Technology Services Solicitation — Section I', text: sampleDocument },
+          data: { title: 'Technology Services Solicitation - Section I', text: sampleDocument },
           demoMode: true,
         }
       }

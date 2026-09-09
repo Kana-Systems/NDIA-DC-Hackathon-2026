@@ -19,7 +19,7 @@ import { apiClient, onSessionExpired } from "./api/client";
 import { SessionRenewal } from "./SessionRenewal";
 import { workspace } from "./workspaceApi";
 import type { Document } from "./workspaceApi";
-import { Chip, Empty, ErrorNotice } from "./WorkspaceShared";
+import { Chip, CompactList, Empty, ErrorNotice } from "./WorkspaceShared";
 import { message, sourceStatus } from "./workspaceUtils";
 import { ContractWorkspace, Research } from "./ContractWorkspace";
 import {
@@ -324,13 +324,6 @@ export default function App() {
         </div>
       </aside>
       <div className="workspace-body">
-        <header className="workspace-topbar">
-          <span>
-            Contract intelligence <ChevronRight size={14} />
-            {pages.find((p) => p.id === page)?.label}
-          </span>
-          <Chip>Private workspace · demo identity</Chip>
-        </header>
         <main id="workspace-main" ref={mainRef} tabIndex={-1}>
           {activeGroup.children.length > 1 && (
             <nav className="section-navigation" aria-label={`${activeGroup.label} navigation`}>
@@ -440,7 +433,7 @@ export default function App() {
                       : "Add an original contract or connect an approved shared folder. No demonstration records are inserted."}
                   </Empty>
                 )}
-                <div className="contract-list">
+                <CompactList key={query} className="contract-list" label="contracts">
                   {contracts.map((doc) => (
                     <button
                       key={doc.id}
@@ -462,7 +455,7 @@ export default function App() {
                       <ChevronRight size={18} />
                     </button>
                   ))}
-                </div>
+                </CompactList>
               </>
             ))}
           {page === "research" && (

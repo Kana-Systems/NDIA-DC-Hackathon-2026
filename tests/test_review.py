@@ -187,7 +187,7 @@ def test_hallucinated_only_citations_are_downgraded_and_labeled() -> None:
     assert finding.citation_ids == []
     assert finding.severity == Severity.INFO
     assert finding.grounding_status == GroundingStatus.UNVERIFIED
-    assert finding.description.startswith("UNVERIFIED —")
+    assert finding.description.startswith("UNVERIFIED -")
 
 
 def test_empty_citations_are_downgraded_and_labeled() -> None:

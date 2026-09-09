@@ -29,7 +29,7 @@ from app.models import (
 CLAUSE_PATTERNS: tuple[tuple[str, str, str, re.Pattern[str]], ...] = (
     (
         "FAR 52.212-4",
-        "Contract Terms and Conditions—Commercial Products and Services",
+        "Contract Terms and Conditions - Commercial Products and Services",
         "commercial",
         re.compile(r"\b(?:FAR\s*)?52\.212-4\b", re.I),
     ),
@@ -597,7 +597,7 @@ EVIDENCE_CATALOG = (
     Evidence(
         evidence_id="EV-FAR-49",
         source="Federal Acquisition Regulation",
-        title="FAR Part 49 — Termination of Contracts",
+        title="FAR Part 49 - Termination of Contracts",
         excerpt=(
             "Part 49 establishes policies and procedures relating to complete "
             "or partial termination."
@@ -607,14 +607,14 @@ EVIDENCE_CATALOG = (
     Evidence(
         evidence_id="EV-FAR-33",
         source="Federal Acquisition Regulation",
-        title="FAR Subpart 33.2 — Disputes and Appeals",
+        title="FAR Subpart 33.2 - Disputes and Appeals",
         excerpt="Subpart 33.2 prescribes policies and procedures for disputes and appeals.",
         url="https://www.acquisition.gov/far/subpart-33.2",
     ),
     Evidence(
         evidence_id="EV-FAR-32",
         source="Federal Acquisition Regulation",
-        title="FAR Part 32 — Contract Financing",
+        title="FAR Part 32 - Contract Financing",
         excerpt="Part 32 prescribes policies for contract financing and payment.",
         url="https://www.acquisition.gov/far/part-32",
     ),
@@ -632,7 +632,7 @@ EVIDENCE_CATALOG = (
     Evidence(
         evidence_id="EV-DFARS-204.7304-C",
         source="Defense Federal Acquisition Regulation Supplement",
-        title="DFARS 204.7304(c) — Solicitation provision and contract clauses",
+        title="DFARS 204.7304(c) - Solicitation provision and contract clauses",
         excerpt=(
             "Use 252.204-7012 in all solicitations and contracts except those "
             "solely for the acquisition of COTS items."
@@ -645,7 +645,7 @@ EVIDENCE_CATALOG = (
     Evidence(
         evidence_id="EV-FAR-RISK",
         source="Federal Acquisition Regulation",
-        title="FAR 16.103 — Negotiating Contract Type",
+        title="FAR 16.103 - Negotiating Contract Type",
         excerpt="Contract type and risk should provide reasonable contractor risk and incentive.",
         url="https://www.acquisition.gov/far/16.103",
     ),

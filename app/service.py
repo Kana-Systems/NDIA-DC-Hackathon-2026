@@ -105,9 +105,9 @@ class ReviewService:
             else:
                 finding.severity = Severity.INFO
                 finding.grounding_status = GroundingStatus.UNVERIFIED
-                if not finding.description.startswith("UNVERIFIED —"):
+                if not finding.description.startswith("UNVERIFIED -"):
                     finding.description = (
-                        "UNVERIFIED — no retrieved evidence supports this synthesized "
+                        "UNVERIFIED - no retrieved evidence supports this synthesized "
                         f"finding. {finding.description}"
                     )
             source = source_findings.get(finding.rule_id)
@@ -322,7 +322,7 @@ class ReviewService:
             inventory.append(
                 ClauseStatusItem(
                     clause_id=commercial_id,
-                    title="Contract Terms and Conditions—Commercial Products and Services",
+                    title="Contract Terms and Conditions - Commercial Products and Services",
                     category="commercial",
                     status=status,
                     rationale=rationale,

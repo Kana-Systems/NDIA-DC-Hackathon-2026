@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ChevronRight,
   Layers,
-  Link2,
   LoaderCircle,
   MessageSquare,
   Search,
@@ -20,7 +19,6 @@ import { message } from "./workspaceUtils";
 export function Research({
   documentId,
   findingId,
-  documents,
   onClearFinding,
 }: {
   documentId: string | null;
@@ -82,17 +80,8 @@ export function Research({
   }
   return (
     <section className="research">
-      <div className="context-strip">
-        <Link2 size={16} />
-        <span>
-          {documentId
-            ? `Context: ${documents.find((d) => d.id === documentId)?.title || "Selected contract"}`
-            : "Context: your indexed sources and official regulatory corpus"}
-        </span>
-        {findingId && <Chip>Selected finding</Chip>}
-        {findingId && onClearFinding && <button className="text-button" onClick={onClearFinding}>All contract questions</button>}
-      </div>
       <form className="panel" onSubmit={ask}>
+        {findingId && onClearFinding && <button type="button" className="text-button" onClick={onClearFinding}>All contract questions</button>}
         <div className="section-heading">
           <h2>Ask the evidence</h2>
           <label className="inline-label">
@@ -436,7 +425,7 @@ export function ContractWorkspace({
         (!latest ? (
           <Empty title="Your document is ready">
             Confirm acquisition details, then run a review. Findings are
-            generated from your document—not seeded examples.
+            generated from your document - not seeded examples.
           </Empty>
         ) : (
           <div className="review-layout">

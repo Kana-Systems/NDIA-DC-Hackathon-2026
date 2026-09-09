@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { FindingList } from "./FindingList";
-import { Decision, WorkspaceTabs } from "./WorkspaceShared";
+import { CompactList, Decision, WorkspaceTabs } from "./WorkspaceShared";
 import { Research } from "./ContractWorkspace";
 import { workspace } from "./workspaceApi";
 import type { Review } from "./workspaceApi";
@@ -17,6 +17,21 @@ const findings = [finding, { ...finding, id: "high", title: "Urgent obligation",
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Review triage and decision readiness", () => {
+  it("preserves a note when additional rows are collapsed and reopened", async () => {
+    const user = userEvent.setup();
+    render(<CompactList label="records">{Array.from({ length: 12 }, (_, i) =>
+      <input key={i} aria-label={`Record ${i + 1} note`} />)}</CompactList>);
+    expect(screen.getAllByRole("textbox")).toHaveLength(10);
+    const toggle = screen.getByRole("button", { name: "Show 2 more records" });
+    toggle.focus();
+    await user.keyboard("{Enter}");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await user.type(screen.getByRole("textbox", { name: "Record 12 note" }), "Keep this draft");
+    await user.click(toggle);
+    expect(screen.getAllByRole("textbox")).toHaveLength(10);
+    await user.click(toggle);
+    expect(screen.getByRole("textbox", { name: "Record 12 note" })).toHaveValue("Keep this draft");
+  });
   it("prioritizes high findings and combines evidence filters with search", async () => {
     const user = userEvent.setup();
     render(<FindingList findings={findings} />);
@@ -75,6 +90,7 @@ describe("Grounded research", () => {
     const ask = vi.spyOn(workspace, "ask");
     const user = userEvent.setup();
     render(<Research documentId={null} documents={[]} />);
+    expect(document.querySelector(".context-strip")).toBeNull();
     await user.click(within(screen.getByRole("group", { name: "Research starting points" })).getByRole("button", { name: "Draft a decision memo" }));
     expect(screen.getByLabelText("Output")).toHaveValue("draft");
     expect((screen.getByRole("textbox", { name: "Question or drafting request" }) as HTMLTextAreaElement).value).toContain("mission question");

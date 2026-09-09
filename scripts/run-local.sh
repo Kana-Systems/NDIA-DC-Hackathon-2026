@@ -19,7 +19,14 @@ if [[ -z "${CLASSIFIER_MODEL_DIR:-}" ]]; then
 fi
 export CLASSIFIER_MODEL_DIR="${CLASSIFIER_MODEL_DIR:-$project_dir/artifacts/models/cuad-linear}"
 export OPENSEARCH_ENDPOINT=""
-echo "Acquisition Lens: http://127.0.0.1:8080/lens/"
+local_port="${PORT:-8080}"
+if [[ ! "$local_port" =~ ^[0-9]{1,5}$ ]] || (( 10#$local_port < 1 || 10#$local_port > 65535 )); then
+  echo "PORT must be a number from 1 to 65535." >&2
+  exit 1
+fi
+# Keep local instances on loopback; PORT allows a second checkout without
+# stopping another developer's running workspace.
+echo "Acquisition Lens: http://127.0.0.1:${local_port}/lens/"
 echo "Lens uses the configured WORKSPACE_PASSWORD, or contract-demo by default."
 echo "Model review: $MODEL_REVIEW_ENABLED; Bedrock: $BEDROCK_ENABLED. Ctrl+C stops the application."
-exec .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
+exec .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port "$local_port"

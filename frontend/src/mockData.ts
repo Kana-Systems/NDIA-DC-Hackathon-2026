@@ -1,6 +1,6 @@
 import type { AnalysisResponse, SourceRecord } from './types'
 
-export const sampleDocument = `SECTION I — CONTRACT CLAUSES
+export const sampleDocument = `SECTION I - CONTRACT CLAUSES
 
 52.204-21 Basic Safeguarding of Covered Contractor Information Systems (NOV 2021) is incorporated by reference.
 
@@ -24,14 +24,14 @@ export const mockAnalysis: AnalysisResponse = {
       excerpt: 'The Contractor shall provide unlimited rights in all technical data, computer software, and documentation first produced or used in performance of this contract, including privately developed materials.',
       explanation: 'This grant appears broader than standard rights allocations and may transfer valuable background IP beyond material developed under the award.',
       recommendation: 'Create a schedule of background IP and propose rights language that distinguishes pre-existing material from contract-funded deliverables.',
-      sources: [{ title: 'DFARS', url: 'https://www.acquisition.gov/dfars', citation: 'Part 227 and applicable clauses — verify with counsel', verificationStatus: 'candidate_source' }],
+      sources: [{ title: 'DFARS', url: 'https://www.acquisition.gov/dfars', citation: 'Part 227 and applicable clauses - verify with counsel', verificationStatus: 'candidate_source' }],
     },
     {
       id: 'termination', category: 'Termination', title: 'Termination clause may waive customary cost recovery', risk: 'high', confidence: 0.93,
       excerpt: 'In the event of termination, no payment will be made for work performed, accepted deliverables, or reasonable termination costs.',
       explanation: 'The stated payment waiver is unusually broad and may conflict with the commercial and noncommercial termination frameworks normally incorporated into federal awards.',
       recommendation: 'Escalate before proposal submission and request alignment to the applicable FAR termination clause and cost-settlement process.',
-      sources: [{ title: 'FAR Part 52', url: 'https://www.acquisition.gov/far/part-52', citation: 'Termination clause family — candidate source for human verification', verificationStatus: 'candidate_source' }],
+      sources: [{ title: 'FAR Part 52', url: 'https://www.acquisition.gov/far/part-52', citation: 'Termination clause family - candidate source for human verification', verificationStatus: 'candidate_source' }],
     },
     {
       id: 'warranty', category: 'Warranty', title: 'Five-year no-cost warranty exceeds typical exposure', risk: 'medium', confidence: 0.84,
@@ -45,7 +45,7 @@ export const mockAnalysis: AnalysisResponse = {
       excerpt: 'The Contractor shall notify the Contracting Officer of any cyber incident within 24 hours and preserve all relevant system images for 90 days.',
       explanation: 'The requirement may be achievable, but the organization must confirm monitoring, escalation, evidence preservation, and subcontractor flow-down readiness.',
       recommendation: 'Map this duty to the incident-response plan and confirm the exact controlling cyber clause and reporting portal.',
-      sources: [{ title: 'eCFR Title 48', url: 'https://www.ecfr.gov/current/title-48', citation: 'Cybersecurity provisions vary by agency — verify applicability', verificationStatus: 'candidate_source' }],
+      sources: [{ title: 'eCFR Title 48', url: 'https://www.ecfr.gov/current/title-48', citation: 'Cybersecurity provisions vary by agency - verify applicability', verificationStatus: 'candidate_source' }],
     },
   ],
 }

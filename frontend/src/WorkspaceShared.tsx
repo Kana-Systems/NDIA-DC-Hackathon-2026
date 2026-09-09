@@ -1,8 +1,34 @@
-import { useId, useRef, useState } from "react";
+import { Children, useId, useRef, useState } from "react";
 import { Check, Download, FileText } from "lucide-react";
 import { workspace } from "./workspaceApi";
 import type { RecordBase } from "./workspaceApi";
 import { downloadJson, message } from "./workspaceUtils";
+
+export function CompactList({ children, label, className }: {
+  children: React.ReactNode;
+  label: string;
+  className?: string;
+}) {
+  const rows = Children.toArray(children);
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const remaining = rows.length - 10;
+  return <div className="compact-list">
+    <div className={className}>{rows.slice(0, 10)}</div>
+    {remaining > 0 && <>
+      <button type="button" className="quiet compact-list-toggle" aria-expanded={expanded}
+        aria-controls={id} onClick={() => setExpanded(!expanded)}>
+        {expanded ? `Show fewer ${label}` : `Show ${remaining} more ${label}`}
+      </button>
+      {/* Keep hidden rows mounted so collapsing a list cannot discard decision notes. */}
+      <div id={id} className="compact-list-overflow" role="region" aria-label={`Additional ${label}`}
+        tabIndex={0} hidden={!expanded}>
+        <div className={className}>{rows.slice(10)}</div>
+      </div>
+    </>}
+  </div>;
+}
+
 export function ErrorNotice({ error }: { error: string }) {
   return error ? (
     <p className="notice error" role="alert">

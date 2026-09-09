@@ -19,8 +19,31 @@ check "classifier_endpoint_source" {
   }
 }
 
+# Bootstrap grants ECS PassRole access. The optional classifier needs its own
+# exact execution-role grant, restricted to SageMaker rather than all services.
+resource "aws_iam_role_policy" "classifier_deploy" {
+  count = local.classifier_endpoint_enabled && var.github_deploy_role_name != "" ? 1 : 0
+
+  name = "classifier-runtime-passrole"
+  role = var.github_deploy_role_name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "PassClassifierExecutionRole"
+      Effect   = "Allow"
+      Action   = "iam:PassRole"
+      Resource = aws_iam_role.sagemaker_training.arn
+      Condition = {
+        StringEquals = { "iam:PassedToService" = "sagemaker.amazonaws.com" }
+      }
+    }]
+  })
+}
+
 resource "aws_sagemaker_model" "classifier" {
   count = local.classifier_endpoint_enabled ? 1 : 0
+
+  depends_on = [aws_iam_role_policy.classifier_deploy]
 
   name                     = "${local.managed_classifier_endpoint_name}-${local.classifier_model_revision}"
   execution_role_arn       = aws_iam_role.sagemaker_training.arn

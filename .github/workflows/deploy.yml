@@ -140,6 +140,7 @@ jobs:
           set -euo pipefail
           [[ "$AWS_REGION" =~ ^us-gov- ]]
           [[ "$AWS_GOV_ROLE_ARN" =~ ^arn:aws-us-gov:iam::[0-9]{12}:role/ ]]
+          echo "TF_VAR_github_deploy_role_name=${AWS_GOV_ROLE_ARN##*/}" >> "$GITHUB_ENV"
           [[ "$TF_STATE_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]
           [[ "$TF_STATE_KEY" =~ ^[A-Za-z0-9._/-]+$ ]]
           [[ "$TF_STATE_KEY" =~ /demo\.tfstate$ ]]
@@ -270,7 +271,9 @@ jobs:
             -backend-config="key=${TF_STATE_KEY}" \
             -backend-config="region=${AWS_REGION}" \
             -backend-config="use_lockfile=true"
-          terraform apply -auto-approve -target=aws_ecr_repository.app
+          terraform apply -auto-approve \
+            -target=aws_ecr_repository.app \
+            -target=aws_iam_role_policy.classifier_deploy
           repository_url="$(terraform output -raw ecr_repository_url)"
           [[ "$repository_url" =~ ^[0-9]{12}\.dkr\.ecr\.us-gov-[a-z]+-[0-9]\.amazonaws\.com/ ]]
           echo "REPOSITORY_URL=$repository_url" >> "$GITHUB_ENV"
@@ -320,12 +323,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          repository_name="${REPOSITORY_URL##*/}"
+          # This image has no build-context inputs: the pinned Dockerfile fully
+          # identifies the build. Reuse its immutable tag for UI/docs releases.
+          classifier_tag="classifier-$(sha256sum Dockerfile.sagemaker | cut -d ' ' -f 1)"
+          lookup_error="$(mktemp)"
+          if digest="$(aws ecr describe-images \
+            --region "$AWS_REGION" --repository-name "$repository_name" \
+            --image-ids "imageTag=${classifier_tag}" \
+            --query 'imageDetails[0].imageDigest' --output text 2>"$lookup_error")"; then
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "TF_VAR_classifier_inference_image_uri=${REPOSITORY_URL}@${digest}" >> "$GITHUB_ENV"
+            echo "Reusing verified classifier build ${classifier_tag}."
+            rm -f "$lookup_error"
+            exit 0
+          elif ! grep -q ImageNotFoundException "$lookup_error"; then
+            cat "$lookup_error" >&2
+            rm -f "$lookup_error"
+            exit 1
+          fi
+          rm -f "$lookup_error"
           aws ecr get-login-password --region "$AWS_REGION" |
             docker login \
               --username AWS \
               --password-stdin \
               442386744353.dkr.ecr.us-gov-west-1.amazonaws.com
-          classifier_tag="${IMAGE_TAG}-classifier"
           docker buildx build \
             --platform linux/amd64 \
             --provenance=true \
@@ -333,7 +355,6 @@ jobs:
             --file Dockerfile.sagemaker \
             --tag "${REPOSITORY_URL}:${classifier_tag}" \
             --push .
-          repository_name="${REPOSITORY_URL##*/}"
           digest="$(aws ecr describe-images \
             --region "$AWS_REGION" \
             --repository-name "$repository_name" \
