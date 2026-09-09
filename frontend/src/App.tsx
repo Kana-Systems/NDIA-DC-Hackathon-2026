@@ -265,16 +265,6 @@ export default function App() {
             <img className="kana-logo" src={kanaLogo} alt="Kana Systems" width="40" height="40" />
             <span className="brand-name">Kana <b>Legal</b></span>
           </a>
-          <button
-            className="sidebar-toggle"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!collapsed}
-            aria-controls="workspace-navigation"
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={() => setCollapsed(value => !value)}
-          >
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
         </div>
         <p className="nav-label">WORKSPACE</p>
         <nav id="workspace-navigation" aria-label="Main navigation">
@@ -295,6 +285,18 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="sidebar-controls">
+          <button
+            className="sidebar-toggle"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            aria-controls="workspace-navigation"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setCollapsed(value => !value)}
+          >
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+        </div>
         <div className="sidebar-bottom">
           <ShieldCheck size={18} />
           <p>

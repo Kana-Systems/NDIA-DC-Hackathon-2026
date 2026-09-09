@@ -102,6 +102,8 @@ describe('Connected Lens workspace', () => {
     mockApi()
     const user = await login()
     const toggle = screen.getByRole('button', { name: 'Collapse sidebar' })
+    expect(toggle.closest('.sidebar-controls')?.nextElementSibling).toHaveClass('sidebar-bottom')
+    expect(document.querySelector('.sidebar-header .sidebar-toggle')).toBeNull()
     toggle.focus()
     await user.keyboard('{Enter}')
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false')
