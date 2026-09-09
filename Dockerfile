@@ -35,6 +35,7 @@ COPY scripts/verify-shared-artifacts.py ./scripts/verify-shared-artifacts.py
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 COPY docker-entrypoint.py /usr/local/bin/app-entrypoint
 RUN python scripts/verify-shared-artifacts.py \
+    && mkdir -p /srv/app/artifacts/workspace \
     && chown -R app:app /srv/app \
     && chmod 0555 /usr/local/bin/app-entrypoint
 

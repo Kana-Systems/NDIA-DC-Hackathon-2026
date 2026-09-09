@@ -12,6 +12,8 @@ from app.api import router
 from app.config import Settings, get_settings
 from app.lens import router as lens_router
 from app.service import ReviewService
+from app.workspace import router as workspace_router
+from app.workspace_store import WorkspaceStore
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -26,6 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description=("Contract-first, source-grounded review and J2 intelligence workflow demo."),
     )
     api.state.review_semaphore = asyncio.Semaphore(settings.max_review_concurrency)
+    api.state.workspace_store = WorkspaceStore(settings)
     if settings.model_review_enabled:
         from app.model_review import ModelReviewService
 
@@ -35,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.dependency_overrides[get_settings] = lambda: settings
     api.include_router(router)
     api.include_router(lens_router)
+    api.include_router(workspace_router)
     lens_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
     if lens_dist.is_dir():
         api.mount("/lens", StaticFiles(directory=lens_dist, html=True), name="lens")

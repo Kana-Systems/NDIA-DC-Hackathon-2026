@@ -28,3 +28,18 @@ def test_target_objects_and_retired_ui_are_not_deployed() -> None:
 
     assert '"/ui"' not in terraform
     assert "target-objects" not in api
+
+
+def test_workspace_aws_storage_is_durable_and_seed_steps_disabled() -> None:
+    table = (ROOT / "infra/terraform/workspace.tf").read_text()
+    task = (ROOT / "infra/terraform/main.tf").read_text()
+    role = (ROOT / "infra/terraform/j2.tf").read_text()
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+    assert 'hash_key     = "scope"' in table
+    assert 'range_key    = "id"' in table
+    assert "point_in_time_recovery" in table
+    assert "deletion_protection_enabled = true" in table
+    assert "aws_kms_key.j2.arn" in table
+    assert '{ name = "WORKSPACE_TABLE", value = aws_dynamodb_table.lens_workspace.name }' in task
+    assert "aws_dynamodb_table.lens_workspace.arn" in role
+    assert "if: ${{ false }} # Synthetic fixtures" in workflow

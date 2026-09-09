@@ -229,6 +229,7 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
       - name: Seed sample knowledge in OpenSearch
+        if: ${{ false }} # Lens uses the packaged official corpus, not sample knowledge.
         working-directory: infra/terraform
         shell: bash
         run: |
@@ -332,6 +333,7 @@ jobs:
           fi
 
       - name: Ingest deterministic J2 fixture corpus
+        if: ${{ false }} # Synthetic fixtures are evaluation-only, never deployment data.
         working-directory: infra/terraform
         shell: bash
         run: |

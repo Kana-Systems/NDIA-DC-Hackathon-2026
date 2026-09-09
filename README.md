@@ -5,6 +5,8 @@
 The integrated application combines the React judge interface with this
 repository's parsing, identity, ingestion, and model infrastructure.
 Read [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) for decisions and progress.
+See [LENS_WORKSPACE.md](LENS_WORKSPACE.md) for the connected revamp, AWS
+persistence, and current demo boundaries.
 
 The model workflow is document upload/paste → trained clause classifier →
 Terra-guided search of ingested FAR/DFARS passages → Terra risk review →
@@ -139,11 +141,9 @@ provenance, and citation boundary also supports two reusable mission workflows:
   deterministic chunking, entity resolution, relationship mapping, change
   detection, provenance, and quality-control status.
 
-The deployed fixture worker automatically generates and ingests 120 synthetic
-public/shared-drive documents into versioned S3 objects, DynamoDB manifests and
-change events, and the ACL-bearing enterprise OpenSearch index. This is a real
-end-to-end scale and ACL test, but it is not evidence that a Microsoft 365 tenant
-has been integrated. The
+Synthetic fixtures are evaluation-only: deployment no longer runs sample
+knowledge or J2 fixture ingestion. Existing fixtures are not deleted, and the
+new Lens workspace does not retrieve from them. The
 Microsoft Graph connector implements delta pagination, sovereign-cloud endpoint
 configuration, permission-to-ACL mapping, updates, and tombstones; it remains
 disabled until an administrator enables its Terraform secret container and

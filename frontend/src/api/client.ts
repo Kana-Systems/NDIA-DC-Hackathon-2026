@@ -29,7 +29,7 @@ export class ApiError extends Error {
   constructor(message: string, readonly status?: number) { super(message); this.name = 'ApiError' }
 }
 
-async function request<T>(path: string, init?: RequestInit, protectedRoute = false): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, protectedRoute = false): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
@@ -96,6 +96,8 @@ export const apiClient = {
     return { data: mapAnalysis(response), demoMode: false }
   },
   async login(password: string): Promise<ApiResult<{ authenticated: boolean }>> {
+    accessToken = null
+    demoAuthorized = false
     try {
       const data = await request<{ access_token: string; token_type: string }>('/api/auth/login', {
         method: 'POST', body: JSON.stringify({ password }),
@@ -112,6 +114,10 @@ export const apiClient = {
       }
       throw error
     }
+  },
+  logout() {
+    accessToken = null
+    demoAuthorized = false
   },
   async getSample(): Promise<ApiResult<DemoDocument>> {
     try {

@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     change_event_table: str = ""
     source_bucket: str = ""
     graph_connector_secret_arn: str = ""
+    workspace_db_path: str = "artifacts/workspace/lens.sqlite"
+    workspace_table: str = ""
+    workspace_import_root: str = ""
 
     @field_validator("allowed_extensions", mode="before")
     @classmethod
