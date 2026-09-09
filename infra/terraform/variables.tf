@@ -48,6 +48,16 @@ variable "create_graph_connector_secret" {
   default     = false
 }
 
+variable "lens_graph_secret_arn" {
+  description = "Externally populated, approved-library Lens SharePoint connector secret ARN."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.lens_graph_secret_arn == "" || can(regex("^arn:aws-us-gov:secretsmanager:us-gov-[a-z]+-[0-9]:[0-9]{12}:secret:contract-review-demo/lens-sharepoint-", var.lens_graph_secret_arn))
+    error_message = "Use the GovCloud Secrets Manager ARN created by configure-sharepoint.py."
+  }
+}
+
 variable "graph_ingestion_schedule_expression" {
   description = "EventBridge Scheduler expression for the optional Microsoft Graph delta connector."
   type        = string

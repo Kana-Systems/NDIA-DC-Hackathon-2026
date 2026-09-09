@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -22,7 +23,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         configured_path = os.getenv(variable)
         if configured_path:
             Path(configured_path).mkdir(parents=True, exist_ok=True)
+
+    @asynccontextmanager
+    async def lifespan(api):
+        stop, job = asyncio.Event(), None
+        if api.state.workspace_store.search:
+            await asyncio.to_thread(api.state.workspace_store.search.ensure_index)
+            if settings.local_corpus_path:
+                await asyncio.to_thread(api.state.workspace_store.search.index_federal)
+        if settings.workspace_sync_seconds:
+            from app.workspace_sync import worker
+
+            job = asyncio.create_task(worker(api.state.workspace_store, settings, stop))
+        yield
+        stop.set()
+        if job:
+            await job
+
     api = FastAPI(
+        lifespan=lifespan,
         title=settings.app_name,
         version="0.2.0",
         description=("Contract-first, source-grounded review and J2 intelligence workflow demo."),

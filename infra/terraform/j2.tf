@@ -320,6 +320,15 @@ data "aws_iam_policy_document" "j2_data_access" {
   }
 
   dynamic "statement" {
+    for_each = var.lens_graph_secret_arn == "" ? [] : [var.lens_graph_secret_arn]
+    content {
+      sid       = "ReadLensSharePointCredentials"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [statement.value]
+    }
+  }
+
+  dynamic "statement" {
     for_each = aws_secretsmanager_secret.graph_connector
 
     content {

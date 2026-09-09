@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     workspace_db_path: str = "artifacts/workspace/lens.sqlite"
     workspace_table: str = ""
     workspace_import_root: str = ""
+    workspace_source_bucket: str = ""
+    workspace_kms_key_arn: str = ""
+    workspace_search_enabled: bool = False
+    workspace_search_index: str = "lens-workspace-v1"
+    workspace_sync_seconds: int = Field(default=0, ge=0)
 
     @field_validator("allowed_extensions", mode="before")
     @classmethod
